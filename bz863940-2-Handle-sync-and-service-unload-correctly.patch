@@ -1,0 +1,274 @@
+From e7536bdaf82044671d2d18ee799eeacd8603af08 Mon Sep 17 00:00:00 2001
+From: Jan Friesse <jfriesse@redhat.com>
+Date: Tue, 16 Oct 2012 16:20:54 +0200
+Subject: [PATCH] Handle sync and service unload correctly
+
+When sync started and service is unloaded in meantime, it can happen that
+sync will call sync_* functions on unloaded service.
+
+Signed-off-by: Jan Friesse <jfriesse@redhat.com>
+Reviewed-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+(backported from commit 6f6988afff632c6c5068becc855aa4a37a656183)
+---
+ exec/evil.c   |   29 ++++++++++++++++++++++-------
+ exec/main.c   |    9 +++++++++
+ exec/sync.c   |   32 ++++++++++++++++++++++++--------
+ exec/syncv2.c |   33 ++++++++++++++++++++++-----------
+ 4 files changed, 77 insertions(+), 26 deletions(-)
+
+diff --git a/exec/evil.c b/exec/evil.c
+index 9d61c5b..ee69697 100644
+--- a/exec/evil.c
++++ b/exec/evil.c
+@@ -167,7 +167,10 @@ extern int evil_callbacks_load (int sync_id,
+ 	int sync_dummy_found = 1;
+ 	int callbacks_init = 1;
+ 
+-	memset (callbacks, 0, sizeof (struct sync_callbacks));
++	if (callbacks != NULL) {
++		memset (callbacks, 0, sizeof (struct sync_callbacks));
++	}
++
+ 	switch (sync_id) {
+ 		case EVS_SERVICE:
+ 			callbacks_init = 0;
+@@ -176,20 +179,28 @@ extern int evil_callbacks_load (int sync_id,
+ 			/*
+ 			 * ugh
+ 			 */
+-			memcpy (callbacks, &clm_sync_operations, sizeof (struct sync_callbacks));
++			if (callbacks != NULL) {
++				memcpy (callbacks, &clm_sync_operations, sizeof (struct sync_callbacks));
++			}
+ 			callbacks_init = 0;
+ 			break;
+ 		case AMF_SERVICE:
+-			callbacks->name = "dummy AMF service";
++			if (callbacks != NULL) {
++				callbacks->name = "dummy AMF service";
++			}
+ 			break;
+ 		case CKPT_SERVICE:
+-			callbacks->name = "dummy CKPT service";
++			if (callbacks != NULL) {
++				callbacks->name = "dummy CKPT service";
++			}
+ 			break;
+ 		case EVT_SERVICE:
+ 			/*
+ 			 * double ugh
+ 			 */
+-			memcpy (callbacks, &evt_sync_operations, sizeof (struct sync_callbacks));
++			if (callbacks != NULL) {
++				memcpy (callbacks, &evt_sync_operations, sizeof (struct sync_callbacks));
++			}
+ 			callbacks_init = 0;
+ 			break;
+ 		case LCK_SERVICE:
+@@ -202,7 +213,11 @@ extern int evil_callbacks_load (int sync_id,
+ 			callbacks_init = 0;
+ 			break;
+ 		case CPG_SERVICE:
+-			callbacks->name = "dummy CPG service";
++			if (callbacks != NULL) {
++				callbacks->name = "dummy CPG service";
++			} else {
++				return (-1);
++			}
+ 			break;
+ 		case CONFDB_SERVICE:
+ 			callbacks_init = 0;
+@@ -213,7 +228,7 @@ extern int evil_callbacks_load (int sync_id,
+ 			break;
+ 
+ 	}
+-	if (callbacks_init) {
++	if (callbacks_init && callbacks != NULL) {
+ 		callbacks->sync_init_api.sync_init_v1 = sync_dummy_init;
+ 		callbacks->sync_process = sync_dummy_process;
+ 		callbacks->sync_activate = sync_dummy_activate;
+diff --git a/exec/main.c b/exec/main.c
+index 8527c13..b6eff64 100644
+--- a/exec/main.c
++++ b/exec/main.c
+@@ -300,6 +300,11 @@ static int corosync_sync_callbacks_retrieve (int sync_id,
+ 		res = evil_callbacks_load (sync_id, callbacks);
+ 		return (res);
+ 	}
++
++	if (callbacks == NULL) {
++		return (0);
++	}
++
+ 	callbacks->name = ais_service[ais_service_index]->name;
+ 	callbacks->sync_init_api.sync_init_v1 = ais_service[ais_service_index]->sync_init;
+ 	callbacks->api_version = 1;
+@@ -333,6 +338,10 @@ static int corosync_sync_v2_callbacks_retrieve (
+ 		return (-1);
+ 	}
+ 
++	if (callbacks == NULL) {
++		return (0);
++	}
++
+ 	callbacks->name = ais_service[service_id]->name;
+ 
+ 	callbacks->api_version = 1;
+diff --git a/exec/sync.c b/exec/sync.c
+index c4197a8..58518ac 100644
+--- a/exec/sync.c
++++ b/exec/sync.c
+@@ -89,6 +89,8 @@ static void (*sync_next_start) (
+ 
+ static int sync_recovery_index = 0;
+ 
++static int my_processing_idx = 0;
++
+ static void *sync_callback_token_handle = 0;
+ 
+ static struct barrier_data barrier_data_confchg[PROCESSOR_COUNT_MAX];
+@@ -186,12 +188,16 @@ static void sync_start_init (const struct memb_ring_id *ring_id)
+ static void sync_service_init (struct memb_ring_id *ring_id)
+ {
+ 	if (sync_callbacks.api_version == 1) {
+-		sync_callbacks.sync_init_api.sync_init_v1 (my_member_list,
+-			my_member_list_entries, ring_id);
++		if (sync_callbacks_retrieve(my_processing_idx, NULL) != -1) {
++			sync_callbacks.sync_init_api.sync_init_v1 (my_member_list,
++				my_member_list_entries, ring_id);
++		}
+ 	} else {
+-		sync_callbacks.sync_init_api.sync_init_v2 (my_trans_list,
+-			my_trans_list_entries,
+-			my_member_list, my_member_list_entries, ring_id);
++		if (sync_callbacks_retrieve(my_processing_idx, NULL) != -1) {
++			sync_callbacks.sync_init_api.sync_init_v2 (my_trans_list,
++				my_trans_list_entries,
++				my_member_list, my_member_list_entries, ring_id);
++		}
+ 	}
+ 	totempg_callback_token_destroy (&sync_callback_token_handle);
+ 
+@@ -237,6 +243,7 @@ static void sync_callbacks_load (void)
+ 			sync_processing = 0;
+ 			break;
+ 		}
++		my_processing_idx = sync_recovery_index;
+ 		sync_recovery_index += 1;
+ 		if (sync_callbacks.sync_init_api.sync_init_v1) {
+ 			break;
+@@ -263,7 +270,11 @@ static int sync_service_process (enum totem_callback_token_type type,
+ 	 * If process returns 0, then its time to activate
+ 	 * and start the next service's synchronization
+ 	 */
+-	res = sync_callbacks.sync_process ();
++	if (sync_callbacks_retrieve(my_processing_idx, NULL) != -1) {
++		res = sync_callbacks.sync_process ();
++	} else {
++		res = 0;
++	}
+ 	if (res != 0) {
+ 		return (0);
+ 	}
+@@ -341,6 +352,7 @@ static void sync_primary_callback_fn (
+ 	totempg_callback_token_destroy (&sync_callback_token_handle);
+ 
+ 	sync_recovery_index = 0;
++	my_processing_idx = 0;
+ 	memset (&barrier_data_confchg, 0, sizeof (barrier_data_confchg));
+ 	for (i = 0; i < view_list_entries; i++) {
+ 		barrier_data_confchg[i].nodeid = view_list[i];
+@@ -426,7 +438,9 @@ static void sync_deliver_fn (
+ 	 * This sync is complete so activate and start next service sync
+ 	 */
+ 	if (barrier_completed && sync_callbacks.sync_activate) {
+-		sync_callbacks.sync_activate ();
++		if (sync_callbacks_retrieve(my_processing_idx, NULL) != -1) {
++			sync_callbacks.sync_activate ();
++		}
+ 
+ 		log_printf (LOGSYS_LEVEL_DEBUG,
+ 			"Committing synchronization for (%s)\n",
+@@ -481,7 +495,9 @@ static void sync_confchg_fn (
+ 
+ 	sync_aborted ();
+ 	if (sync_processing && sync_callbacks.sync_abort != NULL) {
+-		sync_callbacks.sync_abort ();
++		if (sync_callbacks_retrieve(my_processing_idx, NULL) != -1) {
++			sync_callbacks.sync_abort ();
++		}
+ 		sync_callbacks.sync_activate = NULL;
+ 	}
+ 
+diff --git a/exec/syncv2.c b/exec/syncv2.c
+index d39e057..267f915 100644
+--- a/exec/syncv2.c
++++ b/exec/syncv2.c
+@@ -227,8 +227,9 @@ static void sync_barrier_handler (unsigned int nodeid, const void *msg)
+ 		log_printf (LOGSYS_LEVEL_DEBUG, "Committing synchronization for %s\n",
+ 			my_service_list[my_processing_idx].name);
+ 		my_service_list[my_processing_idx].state = ACTIVATE;
+-		my_service_list[my_processing_idx].sync_activate ();
+-
++		if (my_sync_callbacks_retrieve(my_service_list[my_processing_idx].service_id, NULL) != -1) {
++			my_service_list[my_processing_idx].sync_activate ();
++		}
+ 		my_processing_idx += 1;
+ 		if (my_service_list_entries == my_processing_idx) {
+ 			my_memb_determine_list_entries = 0;
+@@ -525,9 +526,11 @@ static int schedwrk_processor (const void *context)
+ 	if (my_service_list[my_processing_idx].state == INIT) {
+ 		my_service_list[my_processing_idx].state = PROCESS;
+ 		if (my_service_list[my_processing_idx].api_version == 1) {
+-			my_service_list[my_processing_idx].sync_init_api.sync_init_v1 (my_member_list,
+-				my_member_list_entries,
+-				&my_ring_id);
++			if (my_sync_callbacks_retrieve(my_service_list[my_processing_idx].service_id, NULL) != -1) {
++				my_service_list[my_processing_idx].sync_init_api.sync_init_v1 (my_member_list,
++					my_member_list_entries,
++					&my_ring_id);
++			}
+ 		} else {
+ 			unsigned int old_trans_list[PROCESSOR_COUNT_MAX];
+ 			size_t old_trans_list_entries = 0;
+@@ -548,15 +551,21 @@ static int schedwrk_processor (const void *context)
+ 				}
+ 			}
+ 
+-			my_service_list[my_processing_idx].sync_init_api.sync_init_v2 (my_trans_list,
+-				my_trans_list_entries, my_member_list,
+-				my_member_list_entries,
+-				&my_ring_id);
++			if (my_sync_callbacks_retrieve(my_service_list[my_processing_idx].service_id, NULL) != -1) {
++				my_service_list[my_processing_idx].sync_init_api.sync_init_v2 (my_trans_list,
++					my_trans_list_entries, my_member_list,
++					my_member_list_entries,
++					&my_ring_id);
++			}
+ 		}
+ 	}
+ 	if (my_service_list[my_processing_idx].state == PROCESS) {
+ 		my_service_list[my_processing_idx].state = PROCESS;
+-		res = my_service_list[my_processing_idx].sync_process ();
++		if (my_sync_callbacks_retrieve(my_service_list[my_processing_idx].service_id, NULL) != -1) {
++			res = my_service_list[my_processing_idx].sync_process ();
++		} else {
++			res = 0;
++		}
+ 		if (res == 0) {
+ 			sync_barrier_enter();
+ 		} else {
+@@ -598,7 +607,9 @@ void sync_v2_abort (void)
+ {
+ 	if (my_state == SYNC_PROCESS) {
+ 		schedwrk_destroy (my_schedwrk_handle);
+-		my_service_list[my_processing_idx].sync_abort ();
++		if (my_sync_callbacks_retrieve(my_service_list[my_processing_idx].service_id, NULL) != -1) {
++			my_service_list[my_processing_idx].sync_abort ();
++		}
+ 	}
+ 
+ 	/* this will cause any "old" barrier messages from causing
+-- 
+1.7.1
+

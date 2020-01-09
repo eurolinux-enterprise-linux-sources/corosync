@@ -1,0 +1,36 @@
+From d76759ec26ecaeb9cc01f49e9eb0749b61454d27 Mon Sep 17 00:00:00 2001
+From: Jan Friesse <jfriesse@redhat.com>
+Date: Mon, 21 Jan 2013 15:42:30 +0000
+Subject: [PATCH] totemip: Properly detect ipv6 address
+
+Commit a853b618 introduced regression in finding IPv6 address. For IPv6,
+IFA_ADDRESS must be checked, instead of IFA_LOCAL, because IFA_LOCAL is
+returned empty.
+
+Signed-off-by: Jan Friesse <jfriesse@redhat.com>
+Reviewed-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+---
+ exec/totemip.c |    7 +++++++
+ 1 files changed, 7 insertions(+), 0 deletions(-)
+
+diff --git a/exec/totemip.c b/exec/totemip.c
+index 155fb81..cc10344 100644
+--- a/exec/totemip.c
++++ b/exec/totemip.c
+@@ -598,6 +598,13 @@ int totemip_iface_check(struct totem_ip_address *bindnet,
+ 
+ 				parse_rtattr(tb, IFA_MAX, IFA_RTA(ifa), len);
+ 
++				if (ifa->ifa_family == AF_INET6 && tb[IFA_ADDRESS]) {
++					memcpy(ipaddr.addr, RTA_DATA(tb[IFA_ADDRESS]), TOTEMIP_ADDRLEN);
++					if (totemip_equal(&ipaddr, bindnet)) {
++						found_if = 1;
++						exact_match_found = 1;
++					}
++				}
+ 				if (tb[IFA_LOCAL]) {
+ 					memcpy(ipaddr.addr, RTA_DATA(tb[IFA_LOCAL]), TOTEMIP_ADDRLEN);
+ 					if (totemip_equal(&ipaddr, bindnet)) {
+-- 
+1.7.1
+

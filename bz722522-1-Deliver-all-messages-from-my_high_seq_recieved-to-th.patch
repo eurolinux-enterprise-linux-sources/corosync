@@ -1,0 +1,79 @@
+From e530376a60dc862f135bd0d4c52aebb43d948423 Mon Sep 17 00:00:00 2001
+From: Steven Dake <sdake@redhat.com>
+Date: Mon, 19 Sep 2011 16:38:34 -0700
+Subject: [PATCH] Deliver all messages from my_high_seq_recieved to the last gap
+
+This patch passes two test cases:
+
+-------
+Test #1
+-------
+Two node cluster - run cpgbench on each node
+
+modify totemsrp with following defines:
+Two test cases:
+
+-------
+Test #2
+-------
+5 node cluster
+
+start 5 nodes randomly at about same time, start 5 nodes randomly at about
+same time, wait 10 seconds and attempt to send a message.  If message blocks
+on "TRY_AGAIN" likely a message loss has occured.  Wait a few minutes without
+cyclng the nodes and see if the TRY_AGAIN state becomes unblocked.
+
+If it doesn't the test case has failed
+
+Signed-off-by: Steven Dake <sdake@redhat.com>
+Reviewed-by: Reviewed-by: Jan Friesse <jfriesse@redhat.com>
+(cherry picked from commit 2ec4ddb039b310b308a8748c88332155afd62608)
+---
+ exec/totemsrp.c |   31 ++++++++++++++++++++++++++++++-
+ 1 files changed, 30 insertions(+), 1 deletions(-)
+
+diff --git a/exec/totemsrp.c b/exec/totemsrp.c
+index 6981ac1..5b61f3b 100644
+--- a/exec/totemsrp.c
++++ b/exec/totemsrp.c
+@@ -1794,7 +1794,36 @@ static void memb_state_operational_enter (struct totemsrp_instance *instance)
+ 		sizeof (struct srp_addr) * instance->my_memb_entries);
+ 
+ 	instance->my_failed_list_entries = 0;
+-	instance->my_high_delivered = instance->my_high_seq_received;
++	/*
++	 * TODO Not exactly to spec
++	 *
++	 * At the entry to this function all messages without a gap are
++	 * deliered.
++	 *
++	 * This code throw away messages from the last gap in the sort queue
++	 * to my_high_seq_received
++	 *
++	 * What should really happen is we should deliver all messages up to
++	 * a gap, then delier the transitional configuration, then deliver
++	 * the messages between the first gap and my_high_seq_received, then
++	 * deliver a regular configuration, then deliver the regular
++	 * configuration
++	 *
++	 * Unfortunately totempg doesn't appear to like this operating mode
++	 * which needs more inspection
++	 */
++	i = instance->my_high_seq_received + 1;
++	do {
++		void *ptr;
++
++		i -= 1;
++		res = sq_item_get (&instance->regular_sort_queue, i, &ptr);
++		if (i == 0) {
++			break;
++		}
++	} while (res);
++
++	instance->my_high_delivered = i;
+ 
+ 	for (i = 0; i <= instance->my_high_delivered; i++) {
+ 		void *ptr;
+-- 
+1.7.3.4
+

@@ -1,0 +1,28 @@
+From a4e7e2bc46545a5acacb3c840bda5270efec987c Mon Sep 17 00:00:00 2001
+From: Jan Friesse <jfriesse@redhat.com>
+Date: Mon, 19 Nov 2012 13:34:49 +0000
+Subject: [PATCH] Add link to confdb_keys in corosync-objctl mpage
+
+Signed-off-by: Jan Friesse <jfriesse@redhat.com>
+Reviewed-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+---
+ man/corosync-objctl.8 |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/man/corosync-objctl.8 b/man/corosync-objctl.8
+index 2b3a7b6..b072ab2 100644
+--- a/man/corosync-objctl.8
++++ b/man/corosync-objctl.8
+@@ -114,7 +114,8 @@ $ corosync-objctl -d objOne
+ Prove that is gone.
+ $ corosync-objctl objOne
+ .SH SEE ALSO
+-.BR confdb_initialize (3),
++.BR confdb_keys (8),
++.BR confdb_initialize (3)
+ .SH AUTHOR
+ Angus Salkeld
+ .PP
+-- 
+1.7.1
+

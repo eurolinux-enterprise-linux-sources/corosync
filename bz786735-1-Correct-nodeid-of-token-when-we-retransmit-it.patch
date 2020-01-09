@@ -1,0 +1,42 @@
+From 081bfb0a4d6050416d4daa27d7a8417f0ba697fc Mon Sep 17 00:00:00 2001
+From: Yunkai Zhang <qiushu.zyk@taobao.com>
+Date: Mon, 28 Nov 2011 18:32:36 +0800
+Subject: [PATCH] Correct nodeid of token when we retransmit it
+
+Although incorrect nodeid will not affect program's logic, but it will
+make us confused when we add some logs to record the transmission path of
+token in debug mode.
+
+Signed-off-by: Yunkai Zhang <qiushu.zyk@taobao.com>
+Reviewed-by: Steven Dake <sdake@redhat.com>
+(cherry picked from commit 19652c3d7cf72241907bf7efc3ca0738c66f2039)
+---
+ exec/totemsrp.c |    3 ++-
+ 1 files changed, 2 insertions(+), 1 deletions(-)
+
+diff --git a/exec/totemsrp.c b/exec/totemsrp.c
+index 78db32b..487a68e 100644
+--- a/exec/totemsrp.c
++++ b/exec/totemsrp.c
+@@ -2685,9 +2685,9 @@ static int token_send (
+ 	orf_token_size = sizeof (struct orf_token) +
+ 		(orf_token->rtr_list_entries * sizeof (struct rtr_item));
+ 
++	orf_token->header.nodeid = instance->my_id.addr[0].nodeid;
+ 	memcpy (instance->orf_token_retransmit, orf_token, orf_token_size);
+ 	instance->orf_token_retransmit_size = orf_token_size;
+-	orf_token->header.nodeid = instance->my_id.addr[0].nodeid;
+ 	assert (orf_token->header.nodeid);
+ 
+ 	if (forward_token == 0) {
+@@ -2867,6 +2867,7 @@ static int memb_state_commit_token_send_recovery (
+ 	memb_list = (struct memb_commit_token_memb_entry *)(addr + commit_token->addr_entries);
+ 
+ 	commit_token->token_seq++;
++	commit_token->header.nodeid = instance->my_id.addr[0].nodeid;
+ 	commit_token_size = sizeof (struct memb_commit_token) +
+ 		((sizeof (struct srp_addr) +
+ 			sizeof (struct memb_commit_token_memb_entry)) * commit_token->addr_entries);
+-- 
+1.7.1
+

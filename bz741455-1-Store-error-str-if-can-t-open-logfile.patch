@@ -1,0 +1,28 @@
+From f954852ef12544de84a9c557316c2612123b5fec Mon Sep 17 00:00:00 2001
+From: Jan Friesse <jfriesse@redhat.com>
+Date: Wed, 1 Feb 2012 17:13:20 +0100
+Subject: [PATCH] Store error str if can't open logfile
+
+Signed-off-by: Jan Friesse <jfriesse@redhat.com>
+Reviewed-by: Steven Dake <sdake@redhat.com>
+(backported from commit a80febda7e8b1bd83f74909c57b682bc9b0a784e)
+---
+ exec/mainconfig.c |    2 +-
+ 1 files changed, 1 insertions(+), 1 deletions(-)
+
+diff --git a/exec/mainconfig.c b/exec/mainconfig.c
+index 7d4e520..cbc41f5 100644
+--- a/exec/mainconfig.c
++++ b/exec/mainconfig.c
+@@ -403,7 +403,7 @@ static int corosync_main_config_set (
+ 	}
+ 
+ 	if (!objdb_get_string (objdb,object_handle, "logfile", &value)) {
+-		if (logsys_config_file_set (subsys, error_string, value) < 0) {
++		if (logsys_config_file_set (subsys, &error_reason, value) < 0) {
+ 			goto parse_error;
+ 		}
+ 	}
+-- 
+1.7.1
+

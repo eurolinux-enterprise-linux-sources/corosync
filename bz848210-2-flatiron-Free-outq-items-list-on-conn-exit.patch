@@ -1,0 +1,64 @@
+From 4cdaf8ef1e7676b179eaeb5bde18d4b63d17ce52 Mon Sep 17 00:00:00 2001
+From: Jan Friesse <jfriesse@redhat.com>
+Date: Thu, 16 Aug 2012 12:37:06 +0200
+Subject: [PATCH] flatiron: Free outq items list on conn exit
+
+Signed-off-by: Jan Friesse <jfriesse@redhat.com>
+Reviewed-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+---
+ exec/coroipcs.c |   25 +++++++++++++++++++++++++
+ 1 files changed, 25 insertions(+), 0 deletions(-)
+
+diff --git a/exec/coroipcs.c b/exec/coroipcs.c
+index 67ff0e7..1f3fa09 100644
+--- a/exec/coroipcs.c
++++ b/exec/coroipcs.c
+@@ -163,6 +163,8 @@ static int shared_mem_dispatch_bytes_left (const struct conn_info *conn_info);
+ 
+ static void outq_flush (struct conn_info *conn_info);
+ 
++static void outq_destroy (struct conn_info *conn_info);
++
+ static int priv_change (struct conn_info *conn_info);
+ 
+ static void ipc_disconnect (struct conn_info *conn_info);
+@@ -567,6 +569,12 @@ static inline int conn_info_destroy (struct conn_info *conn_info)
+ 	if (conn_info->private_data) {
+ 		api->free (conn_info->private_data);
+ 	}
++
++	/*
++	 * Free outq list
++	 */
++	outq_destroy(conn_info);
++
+ 	close (conn_info->fd);
+ 	res = circular_memory_unmap (conn_info->dispatch_buffer, conn_info->dispatch_size);
+ 	zcb_all_free (conn_info);
+@@ -1260,6 +1268,23 @@ static void msg_send (void *conn, const struct iovec *iov, unsigned int iov_len,
+ 	ipc_sem_post (conn_info->control_buffer, SEMAPHORE_DISPATCH);
+ }
+ 
++static void outq_destroy (struct conn_info *conn_info) {
++	struct list_head *list, *list_next;
++	struct outq_item *outq_item;
++
++	for (list = conn_info->outq_head.next;
++		list != &conn_info->outq_head; list = list_next) {
++
++		list_next = list->next;
++		outq_item = list_entry (list, struct outq_item, list);
++		list_del (list);
++		api->free (outq_item->msg);
++		api->free (outq_item);
++	}
++
++	list_init (&conn_info->outq_head);
++}
++
+ static void outq_flush (struct conn_info *conn_info) {
+ 	struct list_head *list, *list_next;
+ 	struct outq_item *outq_item;
+-- 
+1.7.1
+

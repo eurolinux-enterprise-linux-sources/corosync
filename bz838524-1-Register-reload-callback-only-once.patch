@@ -1,0 +1,63 @@
+From ec51f02373d7f0372b8739ab695ae79f2dea26ce Mon Sep 17 00:00:00 2001
+From: Jan Friesse <jfriesse@redhat.com>
+Date: Mon, 9 Jul 2012 13:24:35 +0200
+Subject: [PATCH] Register reload callback only once
+
+Votequorum should register reload callback only once and not after each
+change in confdb.
+
+Signed-off-by: Jan Friesse <jfriesse@redhat.com>
+Reviewed-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+---
+ services/votequorum.c |   23 +++++++++++++----------
+ 1 files changed, 13 insertions(+), 10 deletions(-)
+
+diff --git a/services/votequorum.c b/services/votequorum.c
+index adc31ce..4d3687b 100644
+--- a/services/votequorum.c
++++ b/services/votequorum.c
+@@ -227,6 +227,9 @@ static void exec_votequorum_killnode_endian_convert (void *msg);
+ static void add_votequorum_config_notification(hdb_handle_t quorum_object_handle);
+ 
+ static void recalculate_quorum(int allow_decrease, int by_current_nodes);
++static void votequorum_objdb_reload_notify(
++	objdb_reload_notify_type_t type, int flush,
++	void *priv_data_pt);
+ 
+ /*
+  * Library Handler Definition
+@@ -533,6 +536,16 @@ static int votequorum_exec_init_fn (struct corosync_api_v1 *api)
+ 
+ 	/* Listen for changes */
+ 	add_votequorum_config_notification(object_handle);
++	/*
++	 * Reload notify must be on the parent object
++	 */
++	corosync_api->object_track_start(OBJECT_PARENT_HANDLE,
++					 1,
++					 NULL,
++					 NULL,
++					 NULL,
++					 votequorum_objdb_reload_notify,
++					 NULL);
+ 	corosync_api->object_find_destroy(find_handle);
+ 
+ 	/* Start us off with one node */
+@@ -1667,14 +1680,4 @@ static void add_votequorum_config_notification(
+ 					 NULL,
+ 					 NULL);
+ 
+-	/*
+-	 * Reload notify must be on the parent object
+-	 */
+-	corosync_api->object_track_start(OBJECT_PARENT_HANDLE,
+-					 1,
+-					 NULL,
+-					 NULL,
+-					 NULL,
+-					 votequorum_objdb_reload_notify,
+-					 NULL);
+ }
+-- 
+1.7.1
+

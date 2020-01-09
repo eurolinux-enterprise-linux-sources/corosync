@@ -1,0 +1,69 @@
+From c68fb0caa2e337c6fdebfe564402c6d06b7fb018 Mon Sep 17 00:00:00 2001
+From: Steven Dake <sdake@redhat.com>
+Date: Tue, 29 Nov 2011 07:41:53 -0700
+Subject: [PATCH] From: Yunkai Zhang:
+ Today, I have observed one of the reason that corosync running into
+ FAILED TO RECEIVE state.
+
+There was five nodes(A,B,C,D,E) in my testing, and I limited the UDP
+transmission rate of C nodes by iptables command:
+iptables -A INPUT -i eth0 -p udp -m limit --limit 10000/s
+--limit-burst 1 -j ACCEPT
+iptables -A INPUT -i eth0 -p udp -j DROP
+
+After one hour later, C node had been missing some MCAST messages,
+it's state described as following:
+==state of C node==
+my_aru:0x805
+my_high_seq_received:0xC2C
+my_aru_count:7
+
+=>receved MCAST message with seq:806 from B nodes
+=>enter *message_handler_mcast*
+  =>add this message to regular_sort_queue
+  ...
+  =>enter *update_aru* function
+    => range = (my_high_seq_received - my_aru)
+             = (0xC2C - 0x805)
+             = 1063
+    => if range>1024, do nothing and and return directly.
+==END==
+
+According this logic, after (my_high_req_received-my_aru)>1024, my_aru
+will not be updated though corosync can receive MCAST messages
+retransmitted by other nodes.
+
+But at that timte, my_aru_count was only 7. So the corosync at C node
+would keep in this status until my_aru_count increased to
+fail_to_recv_const(the default value is 2500). This was a long time
+for corosync, but we wasted it.
+
+To solve this issue, maybe we can enlarge the range condition in
+update_aru function? Or we just ingnore the checking of range value,
+it seems no harmfull, because we have been using fail_to_recv_const to
+control the things.
+
+Signed-off-by: Steven Dake <sdake@redhat.com>
+Reviewed-by: Jan Friesse <jfriesse@redhat.com>
+(cherry picked from commit e48ddf99a67754dea056a54f404f3638cf829b9c)
+---
+ exec/totemsrp.c |    3 ---
+ 1 files changed, 0 insertions(+), 3 deletions(-)
+
+diff --git a/exec/totemsrp.c b/exec/totemsrp.c
+index 487a68e..2307ea9 100644
+--- a/exec/totemsrp.c
++++ b/exec/totemsrp.c
+@@ -2377,9 +2377,6 @@ static void update_aru (
+ 	}
+ 
+ 	range = instance->my_high_seq_received - instance->my_aru;
+-	if (range > 1024) {
+-		return;
+-	}
+ 
+ 	my_aru_saved = instance->my_aru;
+ 	for (i = 1; i <= range; i++) {
+-- 
+1.7.1
+

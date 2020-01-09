@@ -1,0 +1,43 @@
+From a853b6180e9832fa763ea796f310dc3de5718324 Mon Sep 17 00:00:00 2001
+From: Jan Friesse <jfriesse@redhat.com>
+Date: Thu, 17 May 2012 14:38:27 +0200
+Subject: [PATCH] Correctly handle point-to-point IP
+
+Main difference between IFA_LOCAL and IFA_ADDRESS:
+
+IFA_ADDRESS is prefix address, rather than local interface address.
+It makes no difference for normally configured broadcast interfaces,
+but for point-to-point IFA_ADDRESS is DESTINATION address,
+local address is supplied in IFA_LOCAL attribute.
+
+We are now using IFA_LOCAL insted of IFA_ADDRESS to correctly find out
+local address.
+
+Signed-off-by: Jan Friesse <jfriesse@redhat.com>
+Reviewed-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+---
+ exec/totemip.c |    8 +++++---
+ 1 files changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/exec/totemip.c b/exec/totemip.c
+index 31dd61e..5258c95 100644
+--- a/exec/totemip.c
++++ b/exec/totemip.c
+@@ -596,9 +596,11 @@ int totemip_iface_check(struct totem_ip_address *bindnet,
+ 
+ 				parse_rtattr(tb, IFA_MAX, IFA_RTA(ifa), len);
+ 
+-				memcpy(ipaddr.addr, RTA_DATA(tb[IFA_ADDRESS]), TOTEMIP_ADDRLEN);
+-				if (totemip_equal(&ipaddr, bindnet)) {
+-					found_if = 1;
++				if (tb[IFA_LOCAL]) {
++					memcpy(ipaddr.addr, RTA_DATA(tb[IFA_LOCAL]), TOTEMIP_ADDRLEN);
++					if (totemip_equal(&ipaddr, bindnet)) {
++						found_if = 1;
++					}
+ 				}
+ 
+ 				/* If the address we have is an IPv4 network address, then
+-- 
+1.7.1
+

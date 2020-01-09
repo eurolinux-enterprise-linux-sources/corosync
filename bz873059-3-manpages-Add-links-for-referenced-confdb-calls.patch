@@ -1,0 +1,60 @@
+From b98d4ab44979a52ef74259e0676929055442cbfb Mon Sep 17 00:00:00 2001
+From: Jan Friesse <jfriesse@redhat.com>
+Date: Wed, 7 Nov 2012 12:05:35 +0100
+Subject: [PATCH] manpages: Add links for referenced confdb calls
+
+Signed-off-by: Jan Friesse <jfriesse@redhat.com>
+Reviewed-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+---
+ man/Makefile.am                |    3 +++
+ man/confdb_key_iter_start.3    |    1 +
+ man/confdb_object_find_start.3 |    1 +
+ man/confdb_object_iter_start.3 |    1 +
+ 4 files changed, 6 insertions(+), 0 deletions(-)
+ create mode 100644 man/confdb_key_iter_start.3
+ create mode 100644 man/confdb_object_find_start.3
+ create mode 100644 man/confdb_object_iter_start.3
+
+diff --git a/man/Makefile.am b/man/Makefile.am
+index 6a93975..d4cb2be 100644
+--- a/man/Makefile.am
++++ b/man/Makefile.am
+@@ -62,11 +62,14 @@ dist_man_MANS = \
+ 	confdb_key_create.3 \
+ 	confdb_key_delete.3 \
+ 	confdb_key_iter.3 \
++	confdb_key_iter_start.3 \
+ 	confdb_key_replace.3 \
+ 	confdb_object_create.3 \
+ 	confdb_object_destroy.3 \
+ 	confdb_object_find.3 \
++	confdb_object_find_start.3 \
+ 	confdb_object_iter.3 \
++	confdb_object_iter_start.3 \
+ 	confdb_object_parent_get.3 \
+ 	confdb_context_get.3 \
+ 	confdb_context_set.3 \
+diff --git a/man/confdb_key_iter_start.3 b/man/confdb_key_iter_start.3
+new file mode 100644
+index 0000000..43bed22
+--- /dev/null
++++ b/man/confdb_key_iter_start.3
+@@ -0,0 +1 @@
++.so confdb_key_iter.3
+diff --git a/man/confdb_object_find_start.3 b/man/confdb_object_find_start.3
+new file mode 100644
+index 0000000..fb0ee30
+--- /dev/null
++++ b/man/confdb_object_find_start.3
+@@ -0,0 +1 @@
++.so confdb_object_find.3
+diff --git a/man/confdb_object_iter_start.3 b/man/confdb_object_iter_start.3
+new file mode 100644
+index 0000000..909663c
+--- /dev/null
++++ b/man/confdb_object_iter_start.3
+@@ -0,0 +1 @@
++.so confdb_object_iter.3
+-- 
+1.7.1
+

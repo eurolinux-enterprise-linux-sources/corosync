@@ -1,0 +1,53 @@
+commit be608c050247e5f9c8266b8a0f9803cc0a3dc881
+Author: Steven Dake <sdake@redhat.com>
+Date:   Tue Aug 30 22:25:21 2011 -0700
+
+    Ignore memb_join messages during flush operations
+    
+    a memb_join operation that occurs during flushing can result in an
+    entry into the GATHER state from the RECOVERY state.  This results in the
+    regular sort queue being used instead of the recovery sort queue, resulting
+    in segfault.
+    
+    Signed-off-by: Steven Dake <sdake@redhat.com>
+    Reviewed-by: Jan Friesse <jfriesse@redhat.com>
+    (cherry picked from commit 48ffa8892daac18935d96ae46a72aebe2fb70430)
+
+diff --git a/exec/totemudp.c b/exec/totemudp.c
+index 96849b7..0c12b56 100644
+--- a/exec/totemudp.c
++++ b/exec/totemudp.c
+@@ -90,6 +90,8 @@
+ #define BIND_STATE_REGULAR	1
+ #define BIND_STATE_LOOPBACK	2
+ 
++#define MESSAGE_TYPE_MCAST	1
++
+ #define HMAC_HASH_SIZE 20
+ struct security_header {
+ 	unsigned char hash_digest[HMAC_HASH_SIZE]; /* The hash *MUST* be first in the data structure */
+@@ -1172,6 +1174,7 @@ static int net_deliver_fn (
+ 	int res = 0;
+ 	unsigned char *msg_offset;
+ 	unsigned int size_delv;
++	char *message_type;
+ 
+ 	if (instance->flushing == 1) {
+ 		iovec = &instance->totemudp_iov_recv_flush;
+@@ -1234,6 +1237,16 @@ static int net_deliver_fn (
+ 	}
+ 
+ 	/*
++	 * Drop all non-mcast messages (more specifically join
++	 * messages should be dropped)
++	 */
++	message_type = (char *)msg_offset;
++	if (instance->flushing == 1 && *message_type != MESSAGE_TYPE_MCAST) {
++		iovec->iov_len = FRAME_SIZE_MAX;
++		return (0);
++	}
++	
++	/*
+ 	 * Handle incoming message
+ 	 */
+ 	instance->totemudp_deliver_fn (

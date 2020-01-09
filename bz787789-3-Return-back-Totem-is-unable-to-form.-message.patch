@@ -1,0 +1,320 @@
+From b343668bbfa09ebcfa4816ddf205eeb8f2ea159c Mon Sep 17 00:00:00 2001
+From: Jan Friesse <jfriesse@redhat.com>
+Date: Mon, 8 Oct 2012 17:27:09 +0200
+Subject: [PATCH] Return back "Totem is unable to form..." message
+
+This patch returns back SUBJ functionality. It rely on fact, that
+sendmsg will return error, and if such error is returned for long time,
+it's probably because of firewall.
+
+Signed-off-by: Jan Friesse <jfriesse@redhat.com>
+Reviewed-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+(backported to flatiron)
+---
+ exec/main.c                    |   19 ++++++++++++++-----
+ exec/totemiba.c                |    4 ++++
+ exec/totemiba.h                |    1 +
+ exec/totemnet.c                |    4 +++-
+ exec/totemnet.h                |    1 +
+ exec/totemrrp.c                |    2 ++
+ exec/totemrrp.h                |    1 +
+ exec/totemsrp.c                |    1 +
+ exec/totemudp.c                |    8 ++++++++
+ exec/totemudp.h                |    1 +
+ exec/totemudpu.c               |    5 +++++
+ exec/totemudpu.h               |    1 +
+ include/corosync/totem/totem.h |    5 +++++
+ 13 files changed, 47 insertions(+), 6 deletions(-)
+
+diff --git a/exec/main.c b/exec/main.c
+index a2a9725..8527c13 100644
+--- a/exec/main.c
++++ b/exec/main.c
+@@ -640,20 +640,26 @@ static void corosync_totem_stats_updater (void *data)
+ 	objdb->object_key_replace (stats->mrp->srp->hdr.handle,
+ 		"continuous_gather", strlen("continuous_gather"),
+ 		&stats->mrp->srp->continuous_gather, sizeof (stats->mrp->srp->continuous_gather));
+-
+-	firewall_enabled_or_nic_failure = (stats->mrp->srp->continuous_gather > MAX_NO_CONT_GATHER ? 1 : 0);
+ 	objdb->object_key_replace (stats->mrp->srp->hdr.handle,
+-		"firewall_enabled_or_nic_failure", strlen("firewall_enabled_or_nic_failure"),
+-		&firewall_enabled_or_nic_failure, sizeof (firewall_enabled_or_nic_failure));
++		"continuous_sendmsg_failures", strlen("continuous_sendmsg_failures"),
++		&stats->mrp->srp->continuous_sendmsg_failures, sizeof (stats->mrp->srp->continuous_sendmsg_failures));
+ 
+-	if (stats->mrp->srp->continuous_gather > MAX_NO_CONT_GATHER) {
++	if (stats->mrp->srp->continuous_gather > MAX_NO_CONT_GATHER ||
++	    stats->mrp->srp->continuous_sendmsg_failures > MAX_NO_CONT_SENDMSG_FAILURES) {
+ 		log_printf (LOGSYS_LEVEL_WARNING,
+ 			"Totem is unable to form a cluster because of an "
+ 			"operating system or network fault. The most common "
+ 			"cause of this message is that the local firewall is "
+ 			"configured improperly.");
++		firewall_enabled_or_nic_failure = 1;
++	} else {
++		firewall_enabled_or_nic_failure = 0;
+ 	}
+ 
++	objdb->object_key_replace (stats->mrp->srp->hdr.handle,
++		"firewall_enabled_or_nic_failure", strlen("firewall_enabled_or_nic_failure"),
++		&firewall_enabled_or_nic_failure, sizeof (firewall_enabled_or_nic_failure));
++
+ 	total_mtt_rx_token = 0;
+ 	total_token_holdtime = 0;
+ 	total_backlog_calc = 0;
+@@ -822,6 +828,9 @@ static void corosync_totem_stats_init (void)
+ 			"continuous_gather", &zero_32,
+ 			sizeof (zero_32), OBJDB_VALUETYPE_UINT32);
+ 		objdb->object_key_create_typed (stats->mrp->srp->hdr.handle,
++			"continuous_sendmsg_failures", &zero_32,
++			sizeof (zero_32), OBJDB_VALUETYPE_UINT32);
++		objdb->object_key_create_typed (stats->mrp->srp->hdr.handle,
+ 			"firewall_enabled_or_nic_failure", &zero_32,
+ 			sizeof (zero_32), OBJDB_VALUETYPE_UINT32);
+ 
+diff --git a/exec/totemiba.c b/exec/totemiba.c
+index a3499cb..3d9669b 100644
+--- a/exec/totemiba.c
++++ b/exec/totemiba.c
+@@ -97,6 +97,8 @@ struct totemiba_instance {
+ 
+ 	struct totem_config *totem_config;
+ 
++	totemsrp_stats_t *stats;
++
+ 	void (*totemiba_iface_change_fn) (
+ 		void *context,
+ 		const struct totem_ip_address *iface_address);
+@@ -1267,6 +1269,7 @@ int totemiba_initialize (
+ 	hdb_handle_t poll_handle,
+ 	void **iba_context,
+ 	struct totem_config *totem_config,
++	totemsrp_stats_t *stats,
+ 	int interface_no,
+ 	void *context,
+ 
+@@ -1305,6 +1308,7 @@ int totemiba_initialize (
+ 	instance->totemiba_iface_change_fn = iface_change_fn;
+ 
+ 	instance->totem_config = totem_config;
++	instance->stats = stats;
+ 
+ 	instance->rrp_context = context;
+ 
+diff --git a/exec/totemiba.h b/exec/totemiba.h
+index 4b2fbbf..5612d57 100644
+--- a/exec/totemiba.h
++++ b/exec/totemiba.h
+@@ -47,6 +47,7 @@ extern int totemiba_initialize (
+ 	hdb_handle_t poll_handle,
+ 	void **iba_handle,
+ 	struct totem_config *totem_config,
++	totemsrp_stats_t *stats,
+ 	int interface_no,
+ 	void *context,
+ 
+diff --git a/exec/totemnet.c b/exec/totemnet.c
+index c7670f9..2786423 100644
+--- a/exec/totemnet.c
++++ b/exec/totemnet.c
+@@ -52,6 +52,7 @@ struct transport {
+ 		hdb_handle_t poll_handle,
+ 		void **transport_instance,
+ 		struct totem_config *totem_config,
++		totemsrp_stats_t *stats,
+ 		int interface_no,
+ 		void *context,
+ 
+@@ -256,6 +257,7 @@ int totemnet_initialize (
+ 	hdb_handle_t poll_handle,
+ 	void **net_context,
+ 	struct totem_config *totem_config,
++	totemsrp_stats_t *stats,
+ 	int interface_no,
+ 	void *context,
+ 
+@@ -281,7 +283,7 @@ int totemnet_initialize (
+ 	totemnet_instance_initialize (instance, totem_config);
+ 
+ 	res = instance->transport->initialize (poll_handle,
+-		&instance->transport_context, totem_config,
++		&instance->transport_context, totem_config, stats,
+ 		interface_no, context, deliver_fn, iface_change_fn, target_set_completed);
+ 
+ 	if (res == -1) {
+diff --git a/exec/totemnet.h b/exec/totemnet.h
+index 7e6374c..c5b8126 100644
+--- a/exec/totemnet.h
++++ b/exec/totemnet.h
+@@ -54,6 +54,7 @@ extern int totemnet_initialize (
+ 	hdb_handle_t poll_handle,
+ 	void **net_context,
+ 	struct totem_config *totem_config,
++	totemsrp_stats_t *stats,
+ 	int interface_no,
+ 	void *context,
+ 
+diff --git a/exec/totemrrp.c b/exec/totemrrp.c
+index 616d0d5..e76d346 100644
+--- a/exec/totemrrp.c
++++ b/exec/totemrrp.c
+@@ -1798,6 +1798,7 @@ int totemrrp_initialize (
+ 	hdb_handle_t poll_handle,
+ 	void **rrp_context,
+ 	struct totem_config *totem_config,
++	totemsrp_stats_t *stats,
+ 	void *context,
+ 
+ 	void (*deliver_fn) (
+@@ -1886,6 +1887,7 @@ int totemrrp_initialize (
+ 			poll_handle,
+ 			&instance->net_handles[i],
+ 			totem_config,
++			stats,
+ 			i,
+ 			(void *)deliver_fn_context,
+ 			rrp_deliver_fn,
+diff --git a/exec/totemrrp.h b/exec/totemrrp.h
+index 2b4a9c7..ca06ee9 100644
+--- a/exec/totemrrp.h
++++ b/exec/totemrrp.h
+@@ -55,6 +55,7 @@ extern int totemrrp_initialize (
+ 	hdb_handle_t poll_handle,
+ 	void **rrp_context,
+ 	struct totem_config *totem_config,
++	totemsrp_stats_t *stats,
+ 	void *context,
+ 
+ 	void (*deliver_fn) (
+diff --git a/exec/totemsrp.c b/exec/totemsrp.c
+index c0cfda5..2d3e03a 100644
+--- a/exec/totemsrp.c
++++ b/exec/totemsrp.c
+@@ -930,6 +930,7 @@ int totemsrp_initialize (
+ 		poll_handle,
+ 		&instance->totemrrp_context,
+ 		totem_config,
++		stats->srp,
+ 		instance,
+ 		main_deliver_fn,
+ 		main_iface_change_fn,
+diff --git a/exec/totemudp.c b/exec/totemudp.c
+index ac2e2b5..cc8fdb4 100644
+--- a/exec/totemudp.c
++++ b/exec/totemudp.c
+@@ -215,6 +215,8 @@ struct totemudp_instance {
+ 
+ 	struct totem_config *totem_config;
+ 
++	totemsrp_stats_t *stats;
++
+ 	struct totem_ip_address token_target;
+ };
+ 
+@@ -1067,6 +1069,9 @@ static inline void mcast_sendmsg (
+ 	if (res < 0) {
+ 		LOGSYS_PERROR (errno, instance->totemudp_log_level_debug,
+ 			"sendmsg(mcast) failed (non-critical)");
++		instance->stats->continuous_sendmsg_failures++;
++	} else {
++		instance->stats->continuous_sendmsg_failures = 0;
+ 	}
+ 
+ 	/*
+@@ -1861,6 +1866,7 @@ int totemudp_initialize (
+ 	hdb_handle_t poll_handle,
+ 	void **udp_context,
+ 	struct totem_config *totem_config,
++	totemsrp_stats_t *stats,
+ 	int interface_no,
+ 	void *context,
+ 
+@@ -1886,6 +1892,8 @@ int totemudp_initialize (
+ 	totemudp_instance_initialize (instance);
+ 
+ 	instance->totem_config = totem_config;
++	instance->stats = stats;
++
+ 	/*
+ 	* Configure logging
+ 	*/
+diff --git a/exec/totemudp.h b/exec/totemudp.h
+index 6218794..58d9054 100644
+--- a/exec/totemudp.h
++++ b/exec/totemudp.h
+@@ -48,6 +48,7 @@ extern int totemudp_initialize (
+ 	hdb_handle_t poll_handle,
+ 	void **udp_context,
+ 	struct totem_config *totem_config,
++	totemsrp_stats_t *stats,
+ 	int interface_no,
+ 	void *context,
+ 
+diff --git a/exec/totemudpu.c b/exec/totemudpu.c
+index 035835f..d19b682 100644
+--- a/exec/totemudpu.c
++++ b/exec/totemudpu.c
+@@ -189,6 +189,8 @@ struct totemudpu_instance {
+ 
+ 	struct totem_config *totem_config;
+ 
++	totemsrp_stats_t *stats;
++
+ 	struct totem_ip_address token_target;
+ 
+ 	int token_socket;
+@@ -1413,6 +1415,7 @@ int totemudpu_initialize (
+ 	hdb_handle_t poll_handle,
+ 	void **udpu_context,
+ 	struct totem_config *totem_config,
++	totemsrp_stats_t *stats,
+ 	int interface_no,
+ 	void *context,
+ 
+@@ -1438,6 +1441,8 @@ int totemudpu_initialize (
+ 	totemudpu_instance_initialize (instance);
+ 
+ 	instance->totem_config = totem_config;
++	instance->stats = stats;
++
+ 	/*
+ 	* Configure logging
+ 	*/
+diff --git a/exec/totemudpu.h b/exec/totemudpu.h
+index 2dcad24..784f03f 100644
+--- a/exec/totemudpu.h
++++ b/exec/totemudpu.h
+@@ -48,6 +48,7 @@ extern int totemudpu_initialize (
+ 	hdb_handle_t poll_handle,
+ 	void **udpu_context,
+ 	struct totem_config *totem_config,
++	totemsrp_stats_t *stats,
+ 	int interface_no,
+ 	void *context,
+ 
+diff --git a/include/corosync/totem/totem.h b/include/corosync/totem/totem.h
+index 4dce3b3..aa4c5d7 100644
+--- a/include/corosync/totem/totem.h
++++ b/include/corosync/totem/totem.h
+@@ -56,6 +56,10 @@
+  * Maximum number of continuous gather states
+  */
+ #define MAX_NO_CONT_GATHER	3
++/*
++ * Maximum number of continuous failures get from sendmsg call
++ */
++#define MAX_NO_CONT_SENDMSG_FAILURES	30
+ 
+ struct totem_interface {
+ 	struct totem_ip_address bindnet;
+@@ -262,6 +266,7 @@ typedef struct {
+ 	uint64_t consensus_timeouts;
+ 	uint64_t rx_msg_dropped;
+ 	uint32_t continuous_gather;
++	uint32_t continuous_sendmsg_failures;
+ 
+ 	int earliest_token;
+ 	int latest_token;
+-- 
+1.7.1
+

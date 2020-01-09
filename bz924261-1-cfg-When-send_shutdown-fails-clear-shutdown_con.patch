@@ -1,0 +1,31 @@
+From fd967b6db504b1fe6667da8ce8a141924e3914a9 Mon Sep 17 00:00:00 2001
+From: Jan Friesse <jfriesse@redhat.com>
+Date: Wed, 6 Mar 2013 12:09:59 +0100
+Subject: [PATCH] cfg: When send_shutdown fails, clear shutdown_con
+
+When (for example) CS_ERR_TRY_AGAIN is returned, shutdown_con was still
+set resulting in following situation:
+- It was not possible to call shutdown again
+- Shutdown didn't proceed
+
+Signed-off-by: Jan Friesse <jfriesse@redhat.com>
+Reviewed-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+---
+ services/cfg.c |    1 +
+ 1 files changed, 1 insertions(+), 0 deletions(-)
+
+diff --git a/services/cfg.c b/services/cfg.c
+index 24f19f2..56198e2 100644
+--- a/services/cfg.c
++++ b/services/cfg.c
+@@ -971,6 +971,7 @@ static void message_handler_req_lib_cfg_tryshutdown (
+ 		result = send_shutdown();
+ 		if (result == -1) {
+ 			error = CS_ERR_TRY_AGAIN;
++			shutdown_con = NULL;
+ 		}
+ 
+ 		res_lib_cfg_tryshutdown.header.size = sizeof(struct res_lib_cfg_tryshutdown);
+-- 
+1.7.1
+

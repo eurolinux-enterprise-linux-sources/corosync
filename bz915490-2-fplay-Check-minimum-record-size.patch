@@ -1,0 +1,45 @@
+From ef63aae13945bd790e54181593561468426baca4 Mon Sep 17 00:00:00 2001
+From: Jan Friesse <jfriesse@redhat.com>
+Date: Wed, 27 Mar 2013 16:19:09 +0100
+Subject: [PATCH] fplay: Check minimum record size
+
+For records in fdata smaller then 4 display error, because such record
+is invalid.
+
+Signed-off-by: Jan Friesse <jfriesse@redhat.com>
+Reviewed-by: Fabio M. Di Nitto <fdinitto@redhat.com>
+---
+ tools/corosync-fplay.c |   10 ++++++++++
+ 1 files changed, 10 insertions(+), 0 deletions(-)
+
+diff --git a/tools/corosync-fplay.c b/tools/corosync-fplay.c
+index 96bb4f0..f07e225 100644
+--- a/tools/corosync-fplay.c
++++ b/tools/corosync-fplay.c
+@@ -343,6 +343,11 @@ static unsigned int printer_subsys_count =
+ 
+ #define G_RECORD_SIZE	10000
+ 
++/*
++ * Record must have at least 4 bytes - size, indent, line and record_number
++ */
++#define MINIMUM_RECORD_SIZE	4
++
+ static uint32_t g_record[G_RECORD_SIZE];
+ 
+ /*
+@@ -362,6 +367,11 @@ static int logsys_rec_get (int rec_idx) {
+ 		exit (EXIT_FAILURE);
+ 	}
+ 
++	if (rec_size < MINIMUM_RECORD_SIZE) {
++		fprintf (stderr, "rec_size too small. Input file is probably corrupted.\n");
++		exit (EXIT_FAILURE);
++	}
++
+ 	if (firstcopy + rec_idx > flt_data_size) {
+ 		firstcopy = flt_data_size - rec_idx;
+ 		secondcopy -= firstcopy - rec_size;
+-- 
+1.7.1
+
