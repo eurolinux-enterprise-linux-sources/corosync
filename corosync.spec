@@ -17,7 +17,7 @@
 Name: corosync
 Summary: The Corosync Cluster Engine and Application Programming Interfaces
 Version: 1.4.7
-Release: 5%{?numcomm:.%{numcomm}}%{?alphatag:.%{alphatag}}%{?dirty:.%{dirty}}%{?dist}
+Release: 6%{?numcomm:.%{numcomm}}%{?alphatag:.%{alphatag}}%{?dirty:.%{dirty}}%{?dist}
 License: BSD
 Group: System Environment/Base
 URL: http://ftp.corosync.org
@@ -43,6 +43,7 @@ Patch16: bz1200387-1-totem-Log-a-message-if-JOIN-or-LEAVE-message-is-igno.patch
 Patch17: bz1286759-1-Revert-ipcc-Fix-ERR_LIBRARY-error-if-finalise-called.patch
 Patch18: bz1286759-2-ipcc-Fix-ERR_LIBRARY-on-finalize-call-in-dispatch.patch
 Patch19: bz1305119-1-totempg-Fix-memory-leak.patch
+Patch20: bz1417907-1-corosync_ring_id_store-Use-safer-permissions.patch
 
 ExclusiveArch: i686 x86_64
 
@@ -93,6 +94,7 @@ BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 %patch17 -p1 -b .bz1286759-1
 %patch18 -p1 -b .bz1286759-2
 %patch19 -p1 -b .bz1305119-1
+%patch20 -p1 -b .bz1417907-1
 
 %build
 %if %{with runautogen}
@@ -326,6 +328,12 @@ The Corosync Cluster Engine APIs.
 %{_mandir}/man8/sam_overview.8*
 
 %changelog
+* Tue Dec 05 2017 Jan Friesse <jfriesse@redhat.com> 1.4.7-6
+- Resolves: rhbz#1417907
+
+- corosync_ring_id_store: Use safer permissions (rhbz#1417907)
+- merge upstream commit 660e2b0854dd3aeb4c13b940063c1cd7216abd84 (rhbz#1417907)
+
 * Wed Feb 10 2016 Jan Friesse <jfriesse@redhat.com> 1.4.7-5
 - Resolves: rhbz#1305119
 
