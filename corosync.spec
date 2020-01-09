@@ -17,7 +17,7 @@
 Name: corosync
 Summary: The Corosync Cluster Engine and Application Programming Interfaces
 Version: 1.4.7
-Release: 2%{?numcomm:.%{numcomm}}%{?alphatag:.%{alphatag}}%{?dirty:.%{dirty}}%{?dist}
+Release: 5%{?numcomm:.%{numcomm}}%{?alphatag:.%{alphatag}}%{?dirty:.%{dirty}}%{?dist}
 License: BSD
 Group: System Environment/Base
 URL: http://ftp.corosync.org
@@ -33,6 +33,16 @@ Patch6: bz1163846-3-totemrrp-Implement-_membership_changed.patch
 Patch7: bz1163846-4-totemudpu-Implement-member_set_active.patch
 Patch8: bz1163846-5-totemudpu-Send-msgs-to-all-members-occasionally.patch
 Patch9: bz1141367-1-ipcc-Fix-ERR_LIBRARY-error-if-finalise-called-inside.patch
+Patch10: bz1278478-1-config-Fix-then-for-than-typos-in-messages-and-some-.patch
+Patch11: bz1278478-2-totemconfig-Make-sure-join-timeout-is-less-than-cons.patch
+Patch12: bz1278473-1-Reset-timer_problem_decrementer-on-fault.patch
+Patch13: bz1278473-2-totem-Ignore-duplicated-commit-tokens-in-recovery.patch
+Patch14: bz1278473-3-objdb-Fix-incorrect-using-lock.patch
+Patch15: bz1278490-1-totemip-Be-more-selective-when-matching-bindnetaddr-.patch
+Patch16: bz1200387-1-totem-Log-a-message-if-JOIN-or-LEAVE-message-is-igno.patch
+Patch17: bz1286759-1-Revert-ipcc-Fix-ERR_LIBRARY-error-if-finalise-called.patch
+Patch18: bz1286759-2-ipcc-Fix-ERR_LIBRARY-on-finalize-call-in-dispatch.patch
+Patch19: bz1305119-1-totempg-Fix-memory-leak.patch
 
 ExclusiveArch: i686 x86_64
 
@@ -73,6 +83,16 @@ BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 %patch7 -p1 -b .bz1163846-4
 %patch8 -p1 -b .bz1163846-5
 %patch9 -p1 -b .bz1141367-1
+%patch10 -p1 -b .bz1278478-1
+%patch11 -p1 -b .bz1278478-2
+%patch12 -p1 -b .bz1278473-1
+%patch13 -p1 -b .bz1278473-2
+%patch14 -p1 -b .bz1278473-3
+%patch15 -p1 -b .bz1278490-1
+%patch16 -p1 -b .bz1200387-1
+%patch17 -p1 -b .bz1286759-1
+%patch18 -p1 -b .bz1286759-2
+%patch19 -p1 -b .bz1305119-1
 
 %build
 %if %{with runautogen}
@@ -306,6 +326,41 @@ The Corosync Cluster Engine APIs.
 %{_mandir}/man8/sam_overview.8*
 
 %changelog
+* Wed Feb 10 2016 Jan Friesse <jfriesse@redhat.com> 1.4.7-5
+- Resolves: rhbz#1305119
+
+- totempg: Fix memory leak (rhbz#1305119)
+- merge upstream commit 349613b2dce8219a5d08dad816cb4da9c12faf83 (rhbz#1305119)
+
+* Tue Dec 01 2015 Jan Friesse <jfriesse@redhat.com> 1.4.7-4
+- Resolves: rhbz#1286759
+
+- Revert "ipcc: Fix ERR_LIBRARY error if finalise called inside dispatch" (rhbz#1286759)
+- merge upstream commit 67242e15c298abff4f93a7bfcd72372f7ba60270 (rhbz#1286759)
+- ipcc: Fix ERR_LIBRARY on finalize call in dispatch (rhbz#1286759)
+- merge upstream commit 514dd9784559feb237af498020bf74cb16091a9e (rhbz#1286759)
+
+* Tue Nov 10 2015 Jan Friesse <jfriesse@redhat.com> 1.4.7-3
+- Resolves: rhbz#1200387
+- Resolves: rhbz#1278473
+- Resolves: rhbz#1278478
+- Resolves: rhbz#1278490
+
+- config: Fix 'then' for 'than' typos in messages and some comments. (rhbz#1278478)
+- merge upstream commit 1be4f7b899f91a8dc23ade10c539177f2b39d88e (rhbz#1278478)
+- totemconfig: Make sure join timeout is less than consensus (rhbz#1278478)
+- merge upstream commit 17e90526aaa702cc3079fe5089253590267418d4 (rhbz#1278478)
+- Reset timer_problem_decrementer on fault (rhbz#1278473)
+- merge upstream commit c5a5bedf6e086acb9f3bda374ac495670a5fcf25 (rhbz#1278473)
+- totem: Ignore duplicated commit tokens in recovery (rhbz#1278473)
+- merge upstream commit 49236f3a16a0980cdb605040f027722b116a8250 (rhbz#1278473)
+- objdb: Fix incorrect using lock (rhbz#1278473)
+- merge upstream commit 42c09a78d9ed2dc393e76308f4fce000535674e6 (rhbz#1278473)
+- totemip: Be more selective when matching bindnetaddr to IP addresses (rhbz#1278490)
+- merge upstream commit 8e90c68fc0a7d5bce035fe7939eb03fa5cf333a2 (rhbz#1278490)
+- totem: Log a message if JOIN or LEAVE message is ignored (rhbz#1200387)
+- merge upstream commit d3c51cd6e4c293a7222172ccec4b80d70b79f5d4 (rhbz#1200387)
+
 * Mon Mar 02 2015 Jan Friesse <jfriesse@redhat.com> 1.4.7-2
 - Resolves: rhbz#1136431
 - Resolves: rhbz#1141367
