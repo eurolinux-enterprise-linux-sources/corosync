@@ -56,6 +56,10 @@
  * Maximum number of continuous gather states
  */
 #define MAX_NO_CONT_GATHER	3
+/*
+ * Maximum number of continuous failures get from sendmsg call
+ */
+#define MAX_NO_CONT_SENDMSG_FAILURES	30
 
 struct totem_interface {
 	struct totem_ip_address bindnet;
@@ -93,6 +97,12 @@ typedef enum {
 	TOTEM_TRANSPORT_UDPU = 1,
 	TOTEM_TRANSPORT_RDMA = 2
 } totem_transport_t;
+
+#define MEMB_RING_ID
+struct memb_ring_id {
+	struct totem_ip_address rep;
+	unsigned long long seq;
+} __attribute__((packed));
 
 struct totem_config {
 	int version;
@@ -143,6 +153,8 @@ struct totem_config {
 
 	unsigned int rrp_problem_count_threshold;
 
+	unsigned int rrp_problem_count_mcast_threshold;
+
 	unsigned int rrp_autorecovery_check_timeout;
 
 	char rrp_mode[TOTEM_RRP_MODE_BYTES];
@@ -184,6 +196,14 @@ struct totem_config {
 	totem_transport_t transport_number;
 
 	unsigned int miss_count_const;
+
+	void (*totem_memb_ring_id_create_or_load) (
+	    struct memb_ring_id *memb_ring_id,
+	    const struct totem_ip_address *addr);
+
+	void (*totem_memb_ring_id_store) (
+	    const struct memb_ring_id *memb_ring_id,
+	    const struct totem_ip_address *addr);
 };
 
 #define TOTEM_CONFIGURATION_TYPE
@@ -202,12 +222,6 @@ enum totem_event_type {
 	TOTEM_EVENT_DELIVERY_CONGESTED,
 	TOTEM_EVENT_NEW_MSG,
 };
-
-#define MEMB_RING_ID
-struct memb_ring_id {
-	struct totem_ip_address rep;
-	unsigned long long seq;
-} __attribute__((packed));
 
 typedef struct {
 	hdb_handle_t handle;
@@ -260,6 +274,7 @@ typedef struct {
 	uint64_t consensus_timeouts;
 	uint64_t rx_msg_dropped;
 	uint32_t continuous_gather;
+	uint32_t continuous_sendmsg_failures;
 
 	int earliest_token;
 	int latest_token;

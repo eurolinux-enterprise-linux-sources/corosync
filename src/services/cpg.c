@@ -135,6 +135,7 @@ enum cpg_downlist_state_e {
 };
 static enum cpg_downlist_state_e downlist_state;
 static struct list_head downlist_messages_head;
+static struct list_head joinlist_messages_head;
 
 struct cpg_pd {
 	void *conn;
@@ -264,6 +265,10 @@ static void downlist_messages_delete (void);
 
 static void downlist_master_choose_and_send (void);
 
+static void joinlist_inform_clients (void);
+
+static void joinlist_messages_delete (void);
+
 static void cpg_sync_init_v2 (
 	const unsigned int *trans_list,
 	size_t trans_list_entries,
@@ -277,49 +282,64 @@ static void cpg_sync_activate (void);
 
 static void cpg_sync_abort (void);
 
+static void do_proc_join(
+	const mar_cpg_name_t *name,
+	uint32_t pid,
+	unsigned int nodeid,
+	int reason);
+
+static void do_proc_leave(
+	const mar_cpg_name_t *name,
+	uint32_t pid,
+	unsigned int nodeid,
+	int reason);
+
 static int notify_lib_totem_membership (
 	void *conn,
 	int member_list_entries,
 	const unsigned int *member_list);
+
+static char *cpg_print_group_name (
+	const mar_cpg_name_t *group);
 
 /*
  * Library Handler Definition
  */
 static struct corosync_lib_handler cpg_lib_engine[] =
 {
-	{ /* 0 */
+	{ /* 0 - MESSAGE_REQ_CPG_JOIN */
 		.lib_handler_fn				= message_handler_req_lib_cpg_join,
 		.flow_control				= CS_LIB_FLOW_CONTROL_REQUIRED
 	},
-	{ /* 1 */
+	{ /* 1 - MESSAGE_REQ_CPG_LEAVE */
 		.lib_handler_fn				= message_handler_req_lib_cpg_leave,
 		.flow_control				= CS_LIB_FLOW_CONTROL_REQUIRED
 	},
-	{ /* 2 */
+	{ /* 2 - MESSAGE_REQ_CPG_MCAST */
 		.lib_handler_fn				= message_handler_req_lib_cpg_mcast,
 		.flow_control				= CS_LIB_FLOW_CONTROL_REQUIRED
 	},
-	{ /* 3 */
+	{ /* 3 - MESSAGE_REQ_CPG_MEMBERSHIP */
 		.lib_handler_fn				= message_handler_req_lib_cpg_membership,
 		.flow_control				= CS_LIB_FLOW_CONTROL_NOT_REQUIRED
 	},
-	{ /* 4 */
+	{ /* 4 - MESSAGE_REQ_CPG_LOCAL_GET */
 		.lib_handler_fn				= message_handler_req_lib_cpg_local_get,
 		.flow_control				= CS_LIB_FLOW_CONTROL_NOT_REQUIRED
 	},
-	{ /* 5 */
+	{ /* 5 - MESSAGE_REQ_CPG_ITERATIONINITIALIZE */
 		.lib_handler_fn				= message_handler_req_lib_cpg_iteration_initialize,
 		.flow_control				= CS_LIB_FLOW_CONTROL_NOT_REQUIRED
 	},
-	{ /* 6 */
+	{ /* 6 - MESSAGE_REQ_CPG_ITERATIONNEXT */
 		.lib_handler_fn				= message_handler_req_lib_cpg_iteration_next,
 		.flow_control				= CS_LIB_FLOW_CONTROL_NOT_REQUIRED
 	},
-	{ /* 7 */
+	{ /* 7 - MESSAGE_REQ_CPG_ITERATIONFINALIZE */
 		.lib_handler_fn				= message_handler_req_lib_cpg_iteration_finalize,
 		.flow_control				= CS_LIB_FLOW_CONTROL_NOT_REQUIRED
 	},
-	{ /* 8 */
+	{ /* 8 - MESSAGE_REQ_CPG_FINALIZE */
 		.lib_handler_fn				= message_handler_req_lib_cpg_finalize,
 		.flow_control				= CS_LIB_FLOW_CONTROL_REQUIRED
 	},
@@ -327,27 +347,27 @@ static struct corosync_lib_handler cpg_lib_engine[] =
 
 static struct corosync_exec_handler cpg_exec_engine[] =
 {
-	{ /* 0 */
+	{ /* 0 - MESSAGE_REQ_EXEC_CPG_PROCJOIN */
 		.exec_handler_fn	= message_handler_req_exec_cpg_procjoin,
 		.exec_endian_convert_fn	= exec_cpg_procjoin_endian_convert
 	},
-	{ /* 1 */
+	{ /* 1 - MESSAGE_REQ_EXEC_CPG_PROCLEAVE */
 		.exec_handler_fn	= message_handler_req_exec_cpg_procleave,
 		.exec_endian_convert_fn	= exec_cpg_procjoin_endian_convert
 	},
-	{ /* 2 */
+	{ /* 2 - MESSAGE_REQ_EXEC_CPG_JOINLIST */
 		.exec_handler_fn	= message_handler_req_exec_cpg_joinlist,
 		.exec_endian_convert_fn	= exec_cpg_joinlist_endian_convert
 	},
-	{ /* 3 */
+	{ /* 3 - MESSAGE_REQ_EXEC_CPG_MCAST */
 		.exec_handler_fn	= message_handler_req_exec_cpg_mcast,
 		.exec_endian_convert_fn	= exec_cpg_mcast_endian_convert
 	},
-	{ /* 4 */
+	{ /* 4 - MESSAGE_REQ_EXEC_CPG_DOWNLIST_OLD */
 		.exec_handler_fn	= message_handler_req_exec_cpg_downlist_old,
 		.exec_endian_convert_fn	= exec_cpg_downlist_endian_convert_old
 	},
-	{ /* 5 */
+	{ /* 5 - MESSAGE_REQ_EXEC_CPG_DOWNLIST */
 		.exec_handler_fn	= message_handler_req_exec_cpg_downlist,
 		.exec_endian_convert_fn	= exec_cpg_downlist_endian_convert
 	},
@@ -460,7 +480,44 @@ struct downlist_msg {
 	struct list_head list;
 };
 
+struct joinlist_msg {
+	mar_uint32_t sender_nodeid;
+	uint32_t pid;
+	mar_cpg_name_t group_name;
+	struct list_head list;
+};
+
 static struct req_exec_cpg_downlist g_req_exec_cpg_downlist;
+
+/*
+ * Function print group name. It's not reentrant
+ */
+static char *cpg_print_group_name(const mar_cpg_name_t *group)
+{
+	static char res[CPG_MAX_NAME_LENGTH * 4 + 1];
+	int dest_pos = 0;
+	char c;
+	int i;
+
+	for (i = 0; i < group->length; i++) {
+		c = group->value[i];
+
+		if (c >= ' ' && c < 0x7f && c != '\\') {
+			res[dest_pos++] = c;
+                } else {
+			if (c == '\\') {
+				res[dest_pos++] = '\\';
+				res[dest_pos++] = '\\';
+			} else {
+				snprintf(res + dest_pos, sizeof(res) - dest_pos, "\\x%02X", c);
+				dest_pos += 4;
+			}
+		}
+	}
+	res[dest_pos] = 0;
+
+	return (res);
+}
 
 static void cpg_sync_init_v2 (
 	const unsigned int *trans_list,
@@ -531,8 +588,11 @@ static void cpg_sync_activate (void)
 		downlist_master_choose_and_send ();
 	}
 
+	joinlist_inform_clients ();
+
 	downlist_messages_delete ();
 	downlist_state = CPG_DOWNLIST_NONE;
+	joinlist_messages_delete ();
 
 	notify_lib_totem_membership (NULL, my_member_list_entries, my_member_list);
 }
@@ -541,6 +601,7 @@ static void cpg_sync_abort (void)
 {
 	downlist_state = CPG_DOWNLIST_NONE;
 	downlist_messages_delete ();
+	joinlist_messages_delete ();
 }
 
 static int notify_lib_totem_membership (
@@ -683,7 +744,8 @@ static int notify_lib_joinlist(
 				}
 				if (left_list_entries) {
 					if (left_list[0].pid == cpd->pid &&
-						left_list[0].nodeid == api->totem_nodeid_get()) {
+						left_list[0].nodeid == api->totem_nodeid_get() &&
+						left_list[0].reason == CONFCHG_CPG_REASON_LEAVE) {
 
 						cpd->pid = 0;
 						memset (&cpd->group_name, 0, sizeof(cpd->group_name));
@@ -728,6 +790,8 @@ static struct downlist_msg* downlist_master_choose (void)
 	struct list_head *iter;
 	uint32_t cmp_members;
 	uint32_t best_members;
+	uint32_t i;
+	int ignore_msg;
 
 	for (iter = downlist_messages_head.next;
 		iter != &downlist_messages_head;
@@ -735,24 +799,44 @@ static struct downlist_msg* downlist_master_choose (void)
 
 		cmp = list_entry(iter, struct downlist_msg, list);
 		downlist_log(LOGSYS_LEVEL_DEBUG, "comparing", cmp);
+
+		ignore_msg = 0;
+		for (i = 0; i < cmp->left_nodes; i++) {
+			if (cmp->nodeids[i] == api->totem_nodeid_get()) {
+				log_printf (LOG_DEBUG, "Ignoring this entry because I'm in the left list\n");
+
+				ignore_msg = 1;
+				break;
+			}
+		}
+
+		if (ignore_msg) {
+			continue ;
+		}
+
 		if (best == NULL) {
 			best = cmp;
 			continue;
 		}
+
 		best_members = best->old_members - best->left_nodes;
 		cmp_members = cmp->old_members - cmp->left_nodes;
 
-		if (cmp_members < best_members) {
-			continue;
-		}
-		else if (cmp_members > best_members) {
+		if (cmp_members > best_members) {
 			best = cmp;
+		} else if (cmp_members == best_members) {
+			if (cmp->old_members > best->old_members) {
+				best = cmp;
+			} else if (cmp->old_members == best->old_members) {
+				if (cmp->sender_nodeid < best->sender_nodeid) {
+					best = cmp;
+				}
+			}
 		}
-		else if (cmp->sender_nodeid < best->sender_nodeid) {
-			best = cmp;
-		}
-
 	}
+
+	assert (best != NULL);
+
 	return best;
 }
 
@@ -795,6 +879,86 @@ static void downlist_master_choose_and_send (void)
 	}
 }
 
+/*
+ * Remove processes that might have left the group while we were suspended.
+ */
+static void joinlist_remove_zombie_pi_entries (void)
+{
+	struct list_head *pi_iter;
+	struct list_head *jl_iter;
+	struct process_info *pi;
+	struct joinlist_msg *stored_msg;
+	int found;
+
+	for (pi_iter = process_info_list_head.next; pi_iter != &process_info_list_head; ) {
+		pi = list_entry (pi_iter, struct process_info, list);
+		pi_iter = pi_iter->next;
+
+		/*
+		 * Ignore local node
+		 */
+		if (pi->nodeid == api->totem_nodeid_get()) {
+			continue ;
+		}
+
+		/*
+		 * Try to find message in joinlist messages
+		 */
+		found = 0;
+		for (jl_iter = joinlist_messages_head.next;
+			jl_iter != &joinlist_messages_head;
+			jl_iter = jl_iter->next) {
+
+			stored_msg = list_entry(jl_iter, struct joinlist_msg, list);
+
+			if (stored_msg->sender_nodeid == api->totem_nodeid_get()) {
+				continue ;
+			}
+
+			if (pi->nodeid == stored_msg->sender_nodeid &&
+			    pi->pid == stored_msg->pid &&
+			    mar_name_compare (&pi->group, &stored_msg->group_name) == 0) {
+				found = 1;
+				break ;
+			}
+		}
+
+		if (!found) {
+			do_proc_leave(&pi->group, pi->pid, pi->nodeid, CONFCHG_CPG_REASON_PROCDOWN);
+		}
+	}
+}
+
+static void joinlist_inform_clients (void)
+{
+	struct joinlist_msg *stored_msg;
+	struct list_head *iter;
+	unsigned int i;
+
+	i = 0;
+	for (iter = joinlist_messages_head.next;
+		iter != &joinlist_messages_head;
+		iter = iter->next) {
+
+		stored_msg = list_entry(iter, struct joinlist_msg, list);
+
+		log_printf (LOG_DEBUG, "joinlist_messages[%u] group:%s, ip:%s, pid:%d",
+			i++, cpg_print_group_name(&stored_msg->group_name),
+			(char*)api->totem_ifaces_print(stored_msg->sender_nodeid),
+			stored_msg->pid);
+
+		/* Ignore our own messages */
+		if (stored_msg->sender_nodeid == api->totem_nodeid_get()) {
+			continue ;
+		}
+
+		do_proc_join (&stored_msg->group_name, stored_msg->pid, stored_msg->sender_nodeid,
+			CONFCHG_CPG_REASON_NODEUP);
+	}
+
+	joinlist_remove_zombie_pi_entries ();
+}
+
 static void downlist_messages_delete (void)
 {
 	struct downlist_msg *stored_msg;
@@ -812,6 +976,23 @@ static void downlist_messages_delete (void)
 	}
 }
 
+static void joinlist_messages_delete (void)
+{
+	struct joinlist_msg *stored_msg;
+	struct list_head *iter, *iter_next;
+
+	for (iter = joinlist_messages_head.next;
+		iter != &joinlist_messages_head;
+		iter = iter_next) {
+
+		iter_next = iter->next;
+
+		stored_msg = list_entry(iter, struct joinlist_msg, list);
+		list_del (&stored_msg->list);
+		free (stored_msg);
+	}
+	list_init (&joinlist_messages_head);
+}
 
 static int cpg_exec_init_fn (struct corosync_api_v1 *corosync_api)
 {
@@ -819,6 +1000,7 @@ static int cpg_exec_init_fn (struct corosync_api_v1 *corosync_api)
 	logsys_subsys_init();
 #endif
 	list_init (&downlist_messages_head);
+	list_init (&joinlist_messages_head);
 	api = corosync_api;
 	return (0);
 }
@@ -865,12 +1047,22 @@ static void cpg_pd_finalize (struct cpg_pd *cpd)
 static int cpg_lib_exit_fn (void *conn)
 {
 	struct cpg_pd *cpd = (struct cpg_pd *)api->ipc_private_data_get (conn);
+	int result;
 
 	log_printf(LOGSYS_LEVEL_DEBUG, "exit_fn for conn=%p\n", conn);
 
+	list_del (&cpd->list);
+	list_init (&cpd->list);
+
 	if (cpd->group_name.length > 0) {
-		cpg_node_joinleave_send (cpd->pid, &cpd->group_name,
+		result = cpg_node_joinleave_send (cpd->pid, &cpd->group_name,
 				MESSAGE_REQ_EXEC_CPG_PROCLEAVE, CONFCHG_CPG_REASON_PROCDOWN);
+		if (result == -1) {
+			/*
+			 * Call this function again later
+			 */
+			return (result);
+		}
 	}
 
 	cpg_pd_finalize (cpd);
@@ -1021,11 +1213,42 @@ static void do_proc_join(
 			    MESSAGE_RES_CPG_CONFCHG_CALLBACK);
 }
 
+static void do_proc_leave(
+	const mar_cpg_name_t *name,
+	uint32_t pid,
+	unsigned int nodeid,
+	int reason)
+{
+	struct process_info *pi;
+	struct list_head *iter;
+	mar_cpg_address_t notify_info;
+
+	notify_info.pid = pid;
+	notify_info.nodeid = nodeid;
+	notify_info.reason = reason;
+
+	notify_lib_joinlist(name, NULL,
+		0, NULL,
+		1, &notify_info,
+		MESSAGE_RES_CPG_CONFCHG_CALLBACK);
+
+	for (iter = process_info_list_head.next; iter != &process_info_list_head; ) {
+		pi = list_entry(iter, struct process_info, list);
+		iter = iter->next;
+
+		if (pi->pid == pid && pi->nodeid == nodeid &&
+			mar_name_compare (&pi->group, name)==0) {
+			list_del (&pi->list);
+			free (pi);
+		}
+	}
+}
+
 static void message_handler_req_exec_cpg_downlist_old (
 	const void *message,
 	unsigned int nodeid)
 {
-	log_printf (LOGSYS_LEVEL_WARNING, "downlist OLD from node %d",
+	log_printf (LOGSYS_LEVEL_WARNING, "downlist OLD from node 0x%x",
 		nodeid);
 }
 
@@ -1080,7 +1303,10 @@ static void message_handler_req_exec_cpg_procjoin (
 {
 	const struct req_exec_cpg_procjoin *req_exec_cpg_procjoin = message;
 
-	log_printf(LOGSYS_LEVEL_DEBUG, "got procjoin message from cluster node %d\n", nodeid);
+	log_printf(LOGSYS_LEVEL_DEBUG, "got procjoin message from cluster node 0x%x (%s) for pid %u",
+		nodeid,
+		api->totem_ifaces_print(nodeid),
+		(unsigned int)req_exec_cpg_procjoin->pid);
 
 	do_proc_join (&req_exec_cpg_procjoin->group_name,
 		req_exec_cpg_procjoin->pid, nodeid,
@@ -1092,31 +1318,15 @@ static void message_handler_req_exec_cpg_procleave (
 	unsigned int nodeid)
 {
 	const struct req_exec_cpg_procjoin *req_exec_cpg_procjoin = message;
-	struct process_info *pi;
-	struct list_head *iter;
-	mar_cpg_address_t notify_info;
 
-	log_printf(LOGSYS_LEVEL_DEBUG, "got procleave message from cluster node %d\n", nodeid);
+	log_printf(LOGSYS_LEVEL_DEBUG, "got procleave message from cluster node 0x%x (%s) for pid %u",
+		nodeid,
+		api->totem_ifaces_print(nodeid),
+		(unsigned int)req_exec_cpg_procjoin->pid);
 
-	notify_info.pid = req_exec_cpg_procjoin->pid;
-	notify_info.nodeid = nodeid;
-	notify_info.reason = req_exec_cpg_procjoin->reason;
-
-	notify_lib_joinlist(&req_exec_cpg_procjoin->group_name, NULL,
-		0, NULL,
-		1, &notify_info,
-		MESSAGE_RES_CPG_CONFCHG_CALLBACK);
-
-	for (iter = process_info_list_head.next; iter != &process_info_list_head; ) {
-		pi = list_entry(iter, struct process_info, list);
-		iter = iter->next;
-
-		if (pi->pid == req_exec_cpg_procjoin->pid && pi->nodeid == nodeid &&
-			mar_name_compare (&pi->group, &req_exec_cpg_procjoin->group_name)==0) {
-			list_del (&pi->list);
-			free (pi);
-		}
-	}
+	do_proc_leave (&req_exec_cpg_procjoin->group_name,
+		req_exec_cpg_procjoin->pid, nodeid,
+		req_exec_cpg_procjoin->reason);
 }
 
 
@@ -1128,18 +1338,19 @@ static void message_handler_req_exec_cpg_joinlist (
 	const char *message = message_v;
 	const coroipc_response_header_t *res = (const coroipc_response_header_t *)message;
 	const struct join_list_entry *jle = (const struct join_list_entry *)(message + sizeof(coroipc_response_header_t));
+	struct joinlist_msg *stored_msg;
 
-	log_printf(LOGSYS_LEVEL_DEBUG, "got joinlist message from node %x\n",
+	log_printf(LOGSYS_LEVEL_DEBUG, "got joinlist message from node 0x%x",
 		nodeid);
 
-	/* Ignore our own messages */
-	if (nodeid == api->totem_nodeid_get()) {
-		return;
-	}
-
 	while ((const char*)jle < message + res->size) {
-		do_proc_join (&jle->group_name, jle->pid, nodeid,
-			CONFCHG_CPG_REASON_NODEUP);
+		stored_msg = malloc (sizeof (struct joinlist_msg));
+		memset(stored_msg, 0, sizeof (struct joinlist_msg));
+		stored_msg->sender_nodeid = nodeid;
+		stored_msg->pid = jle->pid;
+		memcpy(&stored_msg->group_name, &jle->group_name, sizeof(mar_cpg_name_t));
+		list_init (&stored_msg->list);
+		list_add (&stored_msg->list, &joinlist_messages_head);
 		jle++;
 	}
 }
@@ -1286,9 +1497,11 @@ static void message_handler_req_lib_cpg_join (void *conn, const void *message)
 {
 	const struct req_lib_cpg_join *req_lib_cpg_join = message;
 	struct cpg_pd *cpd = (struct cpg_pd *)api->ipc_private_data_get (conn);
+	struct cpg_pd tmp_cpd;
 	struct res_lib_cpg_join res_lib_cpg_join;
 	cs_error_t error = CPG_OK;
 	struct list_head *iter;
+	int result;
 
 	/* Test, if we don't have same pid and group name joined */
 	for (iter = cpg_pd_list_head.next; iter != &cpg_pd_list_head; iter = iter->next) {
@@ -1318,18 +1531,36 @@ static void message_handler_req_lib_cpg_join (void *conn, const void *message)
 		}
 	}
 
+	if (req_lib_cpg_join->group_name.length > CPG_MAX_NAME_LENGTH) {
+		error = CS_ERR_NAME_TOO_LONG;
+		goto response_send;
+	}
+
 	switch (cpd->cpd_state) {
 	case CPD_STATE_UNJOINED:
 		error = CPG_OK;
+		/*
+		 * Make copy of cpd, to restore if cpg_node_joinleave_send fails
+		 */
+		memcpy (&tmp_cpd, cpd, sizeof(tmp_cpd));
 		cpd->cpd_state = CPD_STATE_JOIN_STARTED;
 		cpd->pid = req_lib_cpg_join->pid;
 		cpd->flags = req_lib_cpg_join->flags;
 		memcpy (&cpd->group_name, &req_lib_cpg_join->group_name,
 			sizeof (cpd->group_name));
 
-		cpg_node_joinleave_send (req_lib_cpg_join->pid,
+		result = cpg_node_joinleave_send (req_lib_cpg_join->pid,
 			&req_lib_cpg_join->group_name,
 			MESSAGE_REQ_EXEC_CPG_PROCJOIN, CONFCHG_CPG_REASON_JOIN);
+
+		if (result == -1) {
+			error = CPG_ERR_TRY_AGAIN;
+			/*
+			 * Restore cpd
+			 */
+			memcpy (cpd, &tmp_cpd, sizeof(tmp_cpd));
+			goto response_send;
+		}
 		break;
 	case CPD_STATE_LEAVE_STARTED:
 		error = CPG_ERR_BUSY;
@@ -1356,6 +1587,7 @@ static void message_handler_req_lib_cpg_leave (void *conn, const void *message)
 	cs_error_t error = CPG_OK;
 	struct req_lib_cpg_leave  *req_lib_cpg_leave = (struct req_lib_cpg_leave *)message;
 	struct cpg_pd *cpd = (struct cpg_pd *)api->ipc_private_data_get (conn);
+	int result;
 
 	log_printf(LOGSYS_LEVEL_DEBUG, "got leave request on %p\n", conn);
 
@@ -1372,10 +1604,14 @@ static void message_handler_req_lib_cpg_leave (void *conn, const void *message)
 	case CPD_STATE_JOIN_COMPLETED:
 		error = CPG_OK;
 		cpd->cpd_state = CPD_STATE_LEAVE_STARTED;
-		cpg_node_joinleave_send (req_lib_cpg_leave->pid,
+		result = cpg_node_joinleave_send (req_lib_cpg_leave->pid,
 			&req_lib_cpg_leave->group_name,
 			MESSAGE_REQ_EXEC_CPG_PROCLEAVE,
 			CONFCHG_CPG_REASON_LEAVE);
+		if (result == -1) {
+			error = CPG_ERR_TRY_AGAIN;
+			cpd->cpd_state = CPD_STATE_JOIN_COMPLETED;
+		}
 		break;
 	}
 
@@ -1391,18 +1627,10 @@ static void message_handler_req_lib_cpg_finalize (
 	void *conn,
 	const void *message)
 {
-	struct cpg_pd *cpd = (struct cpg_pd *)api->ipc_private_data_get (conn);
 	struct res_lib_cpg_finalize res_lib_cpg_finalize;
 	cs_error_t error = CS_OK;
 
 	log_printf (LOGSYS_LEVEL_DEBUG, "cpg finalize for conn=%p\n", conn);
-
-	/*
-	 * We will just remove cpd from list. After this call, connection will be
-	 * closed on lib side, and cpg_lib_exit_fn will be called
-	 */
-	list_del (&cpd->list);
-	list_init (&cpd->list);
 
 	res_lib_cpg_finalize.header.size = sizeof (res_lib_cpg_finalize);
 	res_lib_cpg_finalize.header.id = MESSAGE_RES_CPG_FINALIZE;
@@ -1426,7 +1654,7 @@ static void message_handler_req_lib_cpg_mcast (void *conn, const void *message)
 	int result;
  	cs_error_t error = CPG_ERR_NOT_EXIST;
 
-	log_printf(LOGSYS_LEVEL_DEBUG, "got mcast request on %p\n", conn);
+	TRACE1("got mcast request on %p\n", conn);
 
  	switch (cpd->cpd_state) {
  	case CPD_STATE_UNJOINED:
@@ -1458,8 +1686,10 @@ static void message_handler_req_lib_cpg_mcast (void *conn, const void *message)
  		req_exec_cpg_iovec[1].iov_base = (char *)&req_lib_cpg_mcast->message;
  		req_exec_cpg_iovec[1].iov_len = msglen;
 
- 		result = api->totem_mcast (req_exec_cpg_iovec, 2, TOTEM_AGREED);
- 		assert(result == 0);
+		result = api->totem_mcast (req_exec_cpg_iovec, 2, TOTEM_AGREED);
+		if (result == -1) {
+			error = CPG_ERR_TRY_AGAIN;
+		}
  	}
 
 	res_lib_cpg_mcast.header.size = sizeof(res_lib_cpg_mcast);
@@ -1481,7 +1711,7 @@ static void message_handler_req_lib_cpg_membership (void *conn,
 	res_lib_cpg_membership_get.header.id = MESSAGE_RES_CPG_MEMBERSHIP;
 	res_lib_cpg_membership_get.header.error = CPG_OK;
 	res_lib_cpg_membership_get.header.size =
-		sizeof (struct req_lib_cpg_membership_get);
+		sizeof (struct res_lib_cpg_membership_get);
 
 	for (iter = process_info_list_head.next;
 		iter != &process_info_list_head; iter = iter->next) {

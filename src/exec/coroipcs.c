@@ -140,6 +140,7 @@ struct conn_info {
 	key_t semkey;
 #endif
 	unsigned int pending_semops;
+	pthread_mutex_t pending_semops_mutex;
 	pthread_mutex_t mutex;
 	struct control_buffer *control_buffer;
 	char *request_buffer;
@@ -162,6 +163,8 @@ struct conn_info {
 static int shared_mem_dispatch_bytes_left (const struct conn_info *conn_info);
 
 static void outq_flush (struct conn_info *conn_info);
+
+static void outq_destroy (struct conn_info *conn_info);
 
 static int priv_change (struct conn_info *conn_info);
 
@@ -219,7 +222,6 @@ memory_map (
 	void **buf)
 {
 	int32_t fd;
-	void *addr_orig;
 	void *addr;
 	int32_t res;
 
@@ -236,21 +238,13 @@ memory_map (
 		goto error_close_unlink;
 	}
 
-	addr_orig = mmap (NULL, bytes, PROT_NONE,
-		MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+	addr = mmap (NULL, bytes, PROT_READ | PROT_WRITE,
+		MAP_SHARED, fd, 0);
 
-	if (addr_orig == MAP_FAILED) {
+	if (addr == MAP_FAILED) {
 		goto error_close_unlink;
 	}
-
-	addr = mmap (addr_orig, bytes, PROT_READ | PROT_WRITE,
-		MAP_FIXED | MAP_SHARED, fd, 0);
-
-	if (addr != addr_orig) {
-		munmap(addr_orig, bytes);
-		goto error_close_unlink;
-	}
-#ifdef COROSYNC_BSD
+#if (defined COROSYNC_BSD && defined MADV_NOSYNC)
 	madvise(addr, bytes, MADV_NOSYNC);
 #endif
 
@@ -258,7 +252,7 @@ memory_map (
 	if (res) {
 		return (-1);
 	}
-	*buf = addr_orig;
+	*buf = addr;
 	return (0);
 
 error_close_unlink:
@@ -305,7 +299,7 @@ circular_memory_map (
 		munmap(addr_orig, bytes);
 		goto error_close_unlink;
 	}
-#ifdef COROSYNC_BSD
+#if (defined COROSYNC_BSD && defined MADV_NOSYNC)
 	madvise(addr_orig, bytes, MADV_NOSYNC);
 #endif
 
@@ -317,7 +311,7 @@ circular_memory_map (
 		munmap(addr, bytes);
 		goto error_close_unlink;
 	}
-#ifdef COROSYNC_BSD
+#if (defined COROSYNC_BSD && defined MADV_NOSYNC)
 	madvise(((char *)addr_orig) + bytes, bytes, MADV_NOSYNC);
 #endif
 
@@ -567,6 +561,12 @@ static inline int conn_info_destroy (struct conn_info *conn_info)
 	if (conn_info->private_data) {
 		api->free (conn_info->private_data);
 	}
+
+	/*
+	 * Free outq list
+	 */
+	outq_destroy(conn_info);
+
 	close (conn_info->fd);
 	res = circular_memory_unmap (conn_info->dispatch_buffer, conn_info->dispatch_size);
 	zcb_all_free (conn_info);
@@ -695,6 +695,8 @@ static void *pthread_ipc_consumer (void *conn)
 
 		coroipcs_refcount_inc (conn);
 
+		api->serialize_lock();
+
 		send_ok = api->sending_allowed (conn_info->service,
 			header->id,
 			header,
@@ -715,9 +717,7 @@ static void *pthread_ipc_consumer (void *conn)
 		} else 
 		if (send_ok) {
 			api->stats_increment_value (conn_info->stats_handle, "requests");
-			api->serialize_lock();
 			api->handler_fn_get (conn_info->service, header->id) (conn_info, header);
-			api->serialize_unlock();
 		} else {
 			/*
 			 * Overload, tell library to retry
@@ -732,6 +732,9 @@ static void *pthread_ipc_consumer (void *conn)
 		}
 
 		api->sending_allowed_release (conn_info->sending_allowed_private_data);
+
+		api->serialize_unlock();
+
 		coroipcs_refcount_dec (conn);
 	}
 	pthread_exit (0);
@@ -749,7 +752,7 @@ req_setup_send (
 	res_setup.error = error;
 
 retry_send:
-	res = send (conn_info->fd, &res_setup, sizeof (mar_res_setup_t), MSG_WAITALL);
+	res = send (conn_info->fd, &res_setup, sizeof (mar_res_setup_t), MSG_WAITALL|MSG_NOSIGNAL);
 	if (res == -1 && errno == EINTR) {
 		api->stats_increment_value (conn_info->stats_handle, "send_retry_count");
 		goto retry_send;
@@ -775,7 +778,7 @@ req_setup_recv (
 	char cmsg_cred[CMSG_SPACE (sizeof (struct ucred))];
 	int off = 0;
 	int on = 1;
-	struct ucred *cred;
+	struct ucred cred;
 #endif
 	msg_recv.msg_flags = 0;
 	msg_recv.msg_iov = &iov_recv;
@@ -794,7 +797,13 @@ req_setup_recv (
 	iov_recv.iov_base = &conn_info->setup_msg[conn_info->setup_bytes_read];
 	iov_recv.iov_len = sizeof (mar_req_setup_t) - conn_info->setup_bytes_read;
 #ifdef COROSYNC_LINUX
-	setsockopt(conn_info->fd, SOL_SOCKET, SO_PASSCRED, &on, sizeof (on));
+	res = setsockopt(conn_info->fd, SOL_SOCKET, SO_PASSCRED, &on, sizeof (on));
+	if (res == -1) {
+		log_printf (LOGSYS_LEVEL_ERROR,
+			"Can't set SO_PASSCRED socket option for IPC connection.\n");
+		ipc_disconnect (conn_info);
+		return (CS_ERR_LIBRARY);
+	}
 #endif
 
 retry_recv:
@@ -872,16 +881,31 @@ retry_recv:
 /*
  * Usually Linux systems
  */
-	cmsg = CMSG_FIRSTHDR (&msg_recv);
-	assert (cmsg);
-	cred = (struct ucred *)CMSG_DATA (cmsg);
-	if (cred) {
-		conn_info->client_pid = cred->pid;
-		if (api->security_valid (cred->uid, cred->gid)) {
+	for (cmsg = CMSG_FIRSTHDR(&msg_recv); cmsg != NULL;
+	    cmsg = CMSG_NXTHDR(&msg_recv, cmsg)) {
+		if (cmsg->cmsg_type != SCM_CREDENTIALS)
+			continue;
+
+		memcpy(&cred, CMSG_DATA(cmsg), sizeof(struct ucred));
+
+		log_printf(LOGSYS_LEVEL_DEBUG, "IPC credentials for client pid %u: uid %u. gid %u\n",
+		    cred.pid, cred.uid, cred.gid);
+
+		break;
+       }
+
+	if (cmsg != NULL) {
+		conn_info->client_pid = cred.pid;
+		if (api->security_valid (cred.uid, cred.gid)) {
 			auth_res = CS_OK;
 		} else {
 			auth_res = hdb_error_to_cs(errno);
 		}
+	} else {
+		/*
+		 * We were unable to find valid credentials
+		 */
+		log_printf(LOGSYS_LEVEL_ERROR, "Platform should support credentials, but no credentials found!\n");
 	}
 
 #else /* no credentials */
@@ -902,8 +926,14 @@ retry_recv:
 
 	if (conn_info->setup_bytes_read == sizeof (mar_req_setup_t)) {
 #ifdef COROSYNC_LINUX
-		setsockopt(conn_info->fd, SOL_SOCKET, SO_PASSCRED,
+		res = setsockopt(conn_info->fd, SOL_SOCKET, SO_PASSCRED,
 			&off, sizeof (off));
+		if (res == -1) {
+			log_printf (LOGSYS_LEVEL_ERROR,
+				"Can't set SO_PASSCRED socket option for IPC connection.\n");
+			ipc_disconnect (conn_info);
+			return (CS_ERR_LIBRARY);
+		}
 #endif
 		return (CS_OK);
 	}
@@ -1016,6 +1046,9 @@ static void _corosync_ipc_init(void)
 	int server_fd;
 	struct sockaddr_un un_addr;
 	int res;
+#if SO_PASSCRED
+	int on = 1;
+#endif
 
 	/*
 	 * Create socket for IPC clients, name socket, listen for connections
@@ -1071,6 +1104,13 @@ static void _corosync_ipc_init(void)
 	 */
 #if !defined(COROSYNC_LINUX)
 	res = chmod (un_addr.sun_path, S_IRWXU|S_IRWXG|S_IRWXO);
+#endif
+#if SO_PASSCRED
+	res = setsockopt(server_fd, SOL_SOCKET, SO_PASSCRED, &on, sizeof (on));
+	if (res == -1) {
+		LOGSYS_PERROR (errno, LOGSYS_LEVEL_CRIT, "Could not set SO_PASSCRED to AF_UNIX_SOCKET");
+		api->fatal_error ("Could not set SO_PASSCRED to AF_UNIX_SOCKET\n");
+	}
 #endif
 	listen (server_fd, SERVER_BACKLOG);
 
@@ -1217,8 +1257,16 @@ static int shared_mem_dispatch_bytes_left (const struct conn_info *conn_info)
 	} else {
 		bytes_left = n_read - n_write;
 	}
-	if (bytes_left > 0) {
-		bytes_left--;
+
+	/*
+	 * Pointers in ring buffer are 64-bit alignment (in memcpy_dwrap)
+	 * To ensure we will not overwrite previous data,
+	 * 9 bytes (64-bit + 1 byte) are subtracted from bytes_left
+	 */
+	if (bytes_left < 9) {
+		bytes_left = 0;
+	} else {
+		bytes_left = bytes_left - 9;
 	}
 
 	return (bytes_left);
@@ -1249,15 +1297,34 @@ static void msg_send (void *conn, const struct iovec *iov, unsigned int iov_len,
 	buf = list_empty (&conn_info->outq_head);
 	res = send (conn_info->fd, &buf, 1, MSG_NOSIGNAL);
 	if (res != 1) {
+		pthread_mutex_lock(&conn_info->pending_semops_mutex);
 		conn_info->pending_semops += 1;
 		if (conn_info->poll_state == POLL_STATE_IN) {
 			conn_info->poll_state = POLL_STATE_INOUT;
 			api->poll_dispatch_modify (conn_info->fd,
 				POLLIN|POLLOUT|POLLNVAL);
 		}
+		pthread_mutex_unlock(&conn_info->pending_semops_mutex);
 	}
 
 	ipc_sem_post (conn_info->control_buffer, SEMAPHORE_DISPATCH);
+}
+
+static void outq_destroy (struct conn_info *conn_info) {
+	struct list_head *list, *list_next;
+	struct outq_item *outq_item;
+
+	for (list = conn_info->outq_head.next;
+		list != &conn_info->outq_head; list = list_next) {
+
+		list_next = list->next;
+		outq_item = list_entry (list, struct outq_item, list);
+		list_del (list);
+		api->free (outq_item->msg);
+		api->free (outq_item);
+	}
+
+	list_init (&conn_info->outq_head);
 }
 
 static void outq_flush (struct conn_info *conn_info) {
@@ -1488,7 +1555,13 @@ retry_accept:
 	 * Request credentials of sender provided by kernel
 	 */
 #ifdef COROSYNC_LINUX
-	setsockopt(new_fd, SOL_SOCKET, SO_PASSCRED, &on, sizeof (on));
+	res = setsockopt(new_fd, SOL_SOCKET, SO_PASSCRED, &on, sizeof (on));
+	if (res == -1) {
+		log_printf (LOGSYS_LEVEL_ERROR,
+			"Can't set SO_PASSCRED socket option for IPC connection.\n");
+		close(new_fd);
+		return (0);
+	}
 #endif
 
 	res = conn_info_create (new_fd);
@@ -1592,7 +1665,7 @@ int coroipcs_handler_dispatch (
 	/*
 	 * If an error occurs, request exit
 	 */
-	if (revent & (POLLERR|POLLHUP)) {
+	if (revent & (POLLERR|POLLHUP|POLLNVAL)) {
 		ipc_disconnect (conn_info);
 		return (0);
 	}
@@ -1615,6 +1688,7 @@ int coroipcs_handler_dispatch (
 		}
 
 		pthread_mutex_init (&conn_info->mutex, NULL);
+		pthread_mutex_init (&conn_info->pending_semops_mutex, NULL);
 		req_setup = (mar_req_setup_t *)conn_info->setup_msg;
 		/*
 		 * Is the service registered ?
@@ -1751,22 +1825,21 @@ int coroipcs_handler_dispatch (
 	}
 
 	if (revent & POLLOUT) {
-		int psop = conn_info->pending_semops;
-		int i;
+		pthread_mutex_lock(&conn_info->pending_semops_mutex);
 
-		assert (psop != 0);
-		for (i = 0; i < psop; i++) {
-			res = send (conn_info->fd, &buf, 1, MSG_NOSIGNAL);
-			if (res != 1) {
-				return (0);
-			} else {
-				conn_info->pending_semops -= 1;
-			}
+		assert(conn_info->pending_semops != 0);
+
+		while (conn_info->pending_semops > 0 &&
+			((res = send (conn_info->fd, &buf, 1, MSG_NOSIGNAL)) == 1)) {
+
+			conn_info->pending_semops -= 1;
 		}
-		if (conn_info->poll_state == POLL_STATE_INOUT) {
+
+		if (conn_info->pending_semops == 0 && conn_info->poll_state == POLL_STATE_INOUT) {
 			conn_info->poll_state = POLL_STATE_IN;
 			api->poll_dispatch_modify (conn_info->fd, POLLIN|POLLNVAL);
 		}
+		pthread_mutex_unlock(&conn_info->pending_semops_mutex);
 	}
 
 	return (0);

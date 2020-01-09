@@ -58,6 +58,7 @@ extern "C" {
 #define LOGSYS_MODE_FORK		(1<<3)
 #define LOGSYS_MODE_THREADED		(1<<4)
 
+
 /*
  * Log priorities, compliant with syslog and SA Forum Log spec.
  */
@@ -92,6 +93,12 @@ extern "C" {
 #define LOGSYS_RECID_TRACE7		(LOGSYS_RECID_MAX - 10)
 #define LOGSYS_RECID_TRACE8		(LOGSYS_RECID_MAX - 11)
 
+/*
+ * Debug levels
+ */
+#define LOGSYS_DEBUG_OFF		0
+#define LOGSYS_DEBUG_ON			1
+#define LOGSYS_DEBUG_TRACE		2
 
 /*
  * Internal APIs that must be globally exported
@@ -335,29 +342,41 @@ extern void *logsys_rec_end;
 __attribute__ ((constructor))						\
 static void logsys_system_init (void)					\
 {									\
+	const char *error_str;						\
+									\
 	if (_logsys_system_setup (name,mode,debug,file,file_priority,	\
 			syslog_facility,syslog_priority) < 0) {		\
 		fprintf (stderr,					\
 			"Unable to setup logging system: %s.\n", name);	\
-		exit (-1);						\
+		syslog (LOG_ERR,					\
+			"Unable to setup logging system: %s.\n", name);	\
+		exit (EXIT_FAILURE);					\
 	}								\
 									\
 	if (logsys_format_set (format) == -1) {				\
-		fprintf (stderr,					\
-			"Unable to setup logging format.\n");		\
-		exit (-1);						\
+		error_str = "Unable to setup logging format.";		\
+									\
+		fprintf (stderr, "%s\n", error_str);			\
+		syslog (LOG_ERR, "%s\n", error_str);			\
+		exit (EXIT_FAILURE);					\
 	}								\
 									\
 	if (_logsys_rec_init (fltsize) < 0) {				\
-		fprintf (stderr,					\
-			"Unable to initialize log flight recorder.\n");	\
-		exit (-1);						\
+		error_str = "Unable to initialize log flight recorder. "\
+		    "The most common cause of this error is "		\
+		    "not enough space on /dev/shm.";			\
+									\
+		fprintf (stderr, "%s\n", error_str);			\
+		syslog (LOG_ERR, "%s\n", error_str);			\
+		exit (EXIT_FAILURE);					\
 	}								\
 									\
 	if (_logsys_wthread_create() < 0) {				\
-		fprintf (stderr,					\
-			"Unable to initialize logging thread.\n");	\
-		exit (-1);						\
+		error_str = "Unable to initialize logging thread.";	\
+									\
+		fprintf (stderr, "%s\n", error_str);			\
+		syslog (LOG_ERR, "%s\n", error_str);			\
+		exit (EXIT_FAILURE);					\
 	}								\
 }
 

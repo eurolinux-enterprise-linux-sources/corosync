@@ -82,7 +82,7 @@
 #define MISS_COUNT_CONST			5
 #define RRP_PROBLEM_COUNT_TIMEOUT		2000
 #define RRP_PROBLEM_COUNT_THRESHOLD_DEFAULT	10
-#define RRP_PROBLEM_COUNT_THRESHOLD_MIN		5
+#define RRP_PROBLEM_COUNT_THRESHOLD_MIN		2
 #define RRP_AUTORECOVERY_CHECK_TIMEOUT		1000
 
 static char error_string_response[512];
@@ -212,6 +212,8 @@ static void totem_volatile_config_read (
 	objdb_get_int (objdb,object_totem_handle, "rrp_problem_count_timeout", &totem_config->rrp_problem_count_timeout);
 
 	objdb_get_int (objdb,object_totem_handle, "rrp_problem_count_threshold", &totem_config->rrp_problem_count_threshold);
+
+	objdb_get_int (objdb,object_totem_handle, "rrp_problem_count_mcast_threshold", &totem_config->rrp_problem_count_mcast_threshold);
 
 	objdb_get_int (objdb,object_totem_handle, "rrp_autorecovery_check_timeout", &totem_config->rrp_autorecovery_check_timeout);
 
@@ -362,6 +364,16 @@ printf ("couldn't find totem handle\n");
 
 		objdb_get_int (objdb, object_interface_handle, "ringnumber", &ringnumber);
 
+
+		if (ringnumber >= INTERFACE_MAX) {
+			snprintf (error_string_response, sizeof(error_string_response),
+			    "parse error in config: interface ring number %u is bigger then allowed maximum %u\n",
+			    ringnumber, INTERFACE_MAX - 1);
+
+			*error_string = error_string_response;
+			return -1;
+		}
+
 		/*
 		 * Get interface multicast address
 		 */
@@ -419,6 +431,7 @@ printf ("couldn't find totem handle\n");
 		}
 		totem_config->interfaces[ringnumber].member_count = member_count;
 		totem_config->interface_count++;
+		objdb->object_find_destroy (object_find_member_handle);
 	}
 
 	objdb->object_find_destroy (object_find_interface_handle);
@@ -667,10 +680,19 @@ int totem_config_validate (
 	if (totem_config->rrp_problem_count_threshold == 0) {
 		totem_config->rrp_problem_count_threshold = RRP_PROBLEM_COUNT_THRESHOLD_DEFAULT;
 	}
+	if (totem_config->rrp_problem_count_mcast_threshold == 0) {
+		totem_config->rrp_problem_count_mcast_threshold = totem_config->rrp_problem_count_threshold * 10;
+	}
 	if (totem_config->rrp_problem_count_threshold < RRP_PROBLEM_COUNT_THRESHOLD_MIN) {
 		snprintf (local_error_reason, sizeof(local_error_reason),
 			"The RRP problem count threshold (%d problem count) may not be less then (%d problem count).",
 			totem_config->rrp_problem_count_threshold, RRP_PROBLEM_COUNT_THRESHOLD_MIN);
+		goto parse_error;
+	}
+	if (totem_config->rrp_problem_count_mcast_threshold < RRP_PROBLEM_COUNT_THRESHOLD_MIN) {
+		snprintf (local_error_reason, sizeof(local_error_reason),
+			"The RRP multicast problem count threshold (%d problem count) may not be less then (%d problem count).",
+			totem_config->rrp_problem_count_mcast_threshold, RRP_PROBLEM_COUNT_THRESHOLD_MIN);
 		goto parse_error;
 	}
 	if (totem_config->rrp_token_expired_timeout == 0) {

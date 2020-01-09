@@ -16,109 +16,12 @@
 
 Name: corosync
 Summary: The Corosync Cluster Engine and Application Programming Interfaces
-Version: 1.4.1
-Release: 17%{?numcomm:.%{numcomm}}%{?alphatag:.%{alphatag}}%{?dirty:.%{dirty}}%{?dist}.1
+Version: 1.4.7
+Release: 1%{?numcomm:.%{numcomm}}%{?alphatag:.%{alphatag}}%{?dirty:.%{dirty}}%{?dist}
 License: BSD
 Group: System Environment/Base
 URL: http://ftp.corosync.org
 Source0: ftp://ftp:user@ftp.corosync.org/downloads/%{name}-%{version}/%{name}-%{version}%{?numcomm:.%{numcomm}}%{?alphatag:-%{alphatag}}%{?dirty:-%{dirty}}.tar.gz
-
-Patch0: bz722469-1-rrp-Handle-endless-loop-if-all-ifaces-are-faulty.patch
-Patch1: bz722469-2-rrp-Higher-threshold-in-passive-mode-for-mcast.patch
-Patch2: bz732698-1-Ignore-memb_join-messages-during-flush-operations.patch
-Patch3: bz722469-3-totemconfig-change-minimum-RRP-threshold.patch
-Patch4: bz722522-1-Deliver-all-messages-from-my_high_seq_recieved-to-th.patch
-Patch5: bz743810-1-coroipcc-use-malloc-for-path-in-service_connect.patch
-Patch6: bz743812-1-cpg-Handle-errors-from-totem_mcast.patch
-Patch7: bz743812-2-cfg-Handle-errors-from-totem_mcast.patch
-Patch8: bz743813-1-A-CPG-client-can-sometimes-lockup-if-the-local-node-.patch
-Patch9: bz743815-1-Resolve-a-deadlock-between-the-timer-and-serialize-l.patch
-Patch10: bz752159-1-Add-calls-to-missing-object_find_destroy-to-fix-mem-.patch
-Patch11: bz758209-1-From-Yunkai-Zhang.patch
-Patch12: bz752951-1-Free-mem-allocated-by-getaddrinfo.patch
-Patch13: bz741455-1-Store-error-str-if-can-t-open-logfile.patch
-Patch14: bz797192-1-Unlink-shm-buffers-if-init-fails.patch
-Patch15: bz773720-1-objctl-add-missing-calls-to-dispatch-notifications-a.patch
-Patch16: bz786737-1-Fixed-bug-when-corosync-receive-JoinMSG-in-OPERATION.patch
-Patch17: bz786735-1-Correct-nodeid-of-token-when-we-retransmit-it.patch
-Patch18: bz783068-1-Wait-for-corosync-notifyd-exit-in-init-script.patch
-Patch19: bz794744-1-iba-Use-configured-node-id.patch
-Patch20: bz821352-1-Correctly-handle-point-to-point-IP.patch
-Patch21: bz824902-1-totemip-Support-bind-to-exact-address.patch
-Patch22: bz838524-1-Register-reload-callback-only-once.patch
-Patch23: bz770455-1-cpg-Be-more-verbose-for-procjoin-message.patch
-Patch24: bz827100-1-totemudpu-Bind-sending-sockets-to-bindto-address.patch
-Patch25: bz847232-1-confdb-Fix-crash-with-long-values-and-add-API-calls-.patch
-Patch26: bz847232-2-confdb-Fix-crash-with-long-values.patch
-Patch27: bz848210-1-Fix-dbus-part-of-corosync-notifyd.patch
-Patch28: bz848210-2-flatiron-Free-outq-items-list-on-conn-exit.patch
-Patch29: bz847232-3-sa-confdb-fix-crash-due-to-incorrect-malloc-size.patch
-Patch30: bz850757-1-When-flushing-discard-only-memb_join-messages.patch
-Patch31: bz794522-1-Add-man-page-with-Confdb-keys-created-by-corosync.patch
-Patch32: bz794522-2-confdb_keys-Document-few-more-runtime-statistics.patch
-Patch33: bz838743-1-Add-support-for-debug-level-trace-in-config-file.patch
-Patch34: bz838743-2-Move-some-totem-and-cpg-messages-to-trace-level.patch
-Patch35: bz861032-1-Don-t-access-invalid-mem-in-totemconfig.patch
-Patch36: bz787789-1-Use-unix-socket-for-local-multicast-loop.patch
-Patch37: bz787789-2-Move-Totem-is-unable-to-form.-message-to-main.patch
-Patch38: bz787789-3-Return-back-Totem-is-unable-to-form.-message.patch
-Patch39: bz873059-1-Fix-minor-errors-in-man-page-documentation-for-coros.patch
-Patch40: bz873059-2-manpages-Fix-typo-in-evs-manpages.patch
-Patch41: bz873059-3-manpages-Add-links-for-referenced-confdb-calls.patch
-Patch42: bz873059-4-manpages-Add-confdb_key_get-man-page.patch
-Patch43: bz794522-3-Add-link-to-confdb_keys-in-corosync-objctl-mpage.patch
-Patch44: bz876908-1-Track-changes-for-confdb-logging-object.patch
-Patch45: bz876908-2-Don-t-call-reload-on-corosync-objctl-actions.patch
-Patch46: bz830799-1-cpg-Never-choose-downlist-with-localnode.patch
-Patch47: bz830799-2-cpg-Process-join-list-after-downlists.patch
-Patch48: bz830799-3-cpg-Enhance-downlist-selection-algorithm.patch
-Patch49: bz863940-1-Don-t-call-sync_-funcs-for-unloaded-services.patch
-Patch50: bz863940-2-Handle-sync-and-service-unload-correctly.patch
-Patch51: bz863940-3-Make-service_build-contain-correct-number-of-msgs.patch
-Patch52: bz869609-1-Ignore-sync-barrier-msgs-if-sync-doesn-t-started.patch
-Patch53: bz830799-4-Fix-problem-with-sync-operations-under-very-rare-cir.patch
-Patch54: bz830799-5-Handle-segfault-in-backlog_get.patch
-Patch55: bz830799-6-Add-waiting_trans_ack-also-to-fragmentation-layer.patch
-Patch56: bz865039-1-coroipc-Don-t-spin-when-waiting-on-semaphore.patch
-Patch57: bz865039-2-On-places-with-POLLERR-check-also-POLLNVAL.patch
-Patch58: bz865039-3-Check-socket_recv-error-code-in-ipc_dispatch_get.patch
-Patch59: bz865039-4-coroipc-Handle-pfd.revents-as-bit-field.patch
-Patch60: bz865039-5-ipcc-Return-dup-of-socket-fd-to-user-application.patch
-Patch61: bz902397-1-totemip-Properly-detect-ipv6-address.patch
-Patch62: bz854216-1-If-failed_to_recv-is-set-consensus-can-be-empty.patch
-Patch63: bz880598-1-objdb-Don-t-read-uninitialized-memory-in-inc-dec.patch
-Patch64: bz881729-1-log-Handle-race-in-printf_to_logs-and-format_set.patch
-Patch65: bz881729-2-log-Avoid-deadlock-caused-by-previous-commit.patch
-Patch66: bz906432-1-Handle-colon-in-configuration-file.patch
-Patch67: bz906432-2-Handle-unexpected-closing-brace-in-config-file.patch
-Patch68: bz922671-1-Put-handle-to-hdb-in-dispatch-on-unknown-message.patch
-Patch69: bz922671-2-Properly-check-result-of-coroipcc_dispatch_put.patch
-Patch70: bz915769-1-Handle-config-file-with-service-without-name.patch
-Patch71: bz916227-1-Move-corosync-exit-semaphore-initialization.patch
-Patch72: bz922671-3-coroipcs-Ensure-rb-data-are-not-overwritten.patch
-Patch73: bz922671-4-Properly-lock-pending_semops.patch
-Patch74: bz924261-1-cfg-When-send_shutdown-fails-clear-shutdown_con.patch
-Patch75: bz924261-2-cfgtool-Retry-shutdown-on-CS_ERR_TRY_AGAIN.patch
-Patch76: bz907894-1-totempg-Make-iov_delv-local-variable.patch
-Patch77: bz907894-2-Fix-race-for-sending_allowed.patch
-Patch78: bz907894-3-schedwrk-Set-values-before-create-callback.patch
-Patch79: bz907894-4-Remove-exit-thread-and-replace-it-by-exit-pipe.patch
-Patch80: bz907894-5-totempg-Store-and-restore-global-variables.patch
-Patch81: bz915490-1-Logsys-Ensure-logging-PID-is-really-corosync.patch
-Patch82: bz915490-2-fplay-Check-minimum-record-size.patch
-Patch83: bz915490-3-corosync-fplay-Check-incorrect-idx-and-cycle.patch
-Patch84: bz947936-1-Improve-handling-of-getpwnam_r-and-getgrnam_r.patch
-Patch85: bz949491-1-Detect-big-scheduling-pauses.patch
-Patch86: bz877349-1-Improve-corosync-notifyd-example.patch
-Patch87: bz877349-2-Install-sysconfig-corosync-notifyd-in-specfile.patch
-Patch88: bz959189-1-Free-confdb-message-holder-list-on-confdb-exit.patch
-Patch89: bz959184-1-Handle-SIGPIPE-in-req_setup_send.patch
-Patch90: bz959189-2-confdb-Make-objdb_notify_dispatch-preemptable.patch
-Patch91: bz907894-6-Lock-sync_in_process-variable.patch
-Patch92: bz956739-1-Add-timestamps-to-the-Corosync-black-box-output.patch
-Patch93: bz1080103-1-cpg-Refactor-mh_req_exec_cpg_procleave.patch
-Patch94: bz1080103-2-cpg-Make-sure-nodid-is-always-logged-as-hex-num.patch
-Patch95: bz1080103-3-cpg-Make-sure-left-nodes-are-really-removed.patch
 
 ExclusiveArch: i686 x86_64
 
@@ -149,102 +52,6 @@ BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 
 %prep
 %setup -q -n %{name}-%{version}%{?numcomm:.%{numcomm}}%{?alphatag:-%{alphatag}}%{?dirty:-%{dirty}}
-%patch0 -p1 -b .bz722469-1
-%patch1 -p1 -b .bz722469-2
-%patch2 -p1 -b .bz732698-1
-%patch3 -p1 -b .bz722469-3
-%patch4 -p1 -b .bz722522-1
-%patch5 -p1 -b .bz743810-1
-%patch6 -p1 -b .bz743812-1
-%patch7 -p1 -b .bz743812-2
-%patch8 -p1 -b .bz743813-1
-%patch9 -p1 -b .bz743815-1
-%patch10 -p1 -b .bz752159-1
-%patch11 -p1 -b .bz758209-1
-%patch12 -p1 -b .bz752951-1
-%patch13 -p1 -b .bz741455-1
-%patch14 -p1 -b .bz797192-1
-%patch15 -p1 -b .bz773720-1
-%patch16 -p1 -b .bz786737-1
-%patch17 -p1 -b .bz786735-1
-%patch18 -p1 -b .bz783068-1
-%patch19 -p1 -b .bz794744-1
-%patch20 -p1 -b .bz821352-1
-%patch21 -p1 -b .bz824902-1
-%patch22 -p1 -b .bz838524-1
-%patch23 -p1 -b .bz770455-1
-%patch24 -p1 -b .bz827100-1
-%patch25 -p1 -b .bz847232-1
-%patch26 -p1 -b .bz847232-2
-%patch27 -p1 -b .bz848210-1
-%patch28 -p1 -b .bz848210-2
-%patch29 -p1 -b .bz847232-3
-%patch30 -p1 -b .bz850757-1
-%patch31 -p1 -b .bz794522-1
-%patch32 -p1 -b .bz794522-2
-%patch33 -p1 -b .bz838743-1
-%patch34 -p1 -b .bz838743-2
-%patch35 -p1 -b .bz861032-1
-%patch36 -p1 -b .bz787789-1
-%patch37 -p1 -b .bz787789-2
-%patch38 -p1 -b .bz787789-3
-%patch39 -p1 -b .bz873059-1
-%patch40 -p1 -b .bz873059-2
-%patch41 -p1 -b .bz873059-3
-%patch42 -p1 -b .bz873059-4
-%patch43 -p1 -b .bz794522-3
-%patch44 -p1 -b .bz876908-1
-%patch45 -p1 -b .bz876908-2
-%patch46 -p1 -b .bz830799-1
-%patch47 -p1 -b .bz830799-2
-%patch48 -p1 -b .bz830799-3
-%patch49 -p1 -b .bz863940-1
-%patch50 -p1 -b .bz863940-2
-%patch51 -p1 -b .bz863940-3
-%patch52 -p1 -b .bz869609-1
-%patch53 -p1 -b .bz830799-4
-%patch54 -p1 -b .bz830799-5
-%patch55 -p1 -b .bz830799-6
-%patch56 -p1 -b .bz865039-1
-%patch57 -p1 -b .bz865039-2
-%patch58 -p1 -b .bz865039-3
-%patch59 -p1 -b .bz865039-4
-%patch60 -p1 -b .bz865039-5
-%patch61 -p1 -b .bz902397-1
-%patch62 -p1 -b .bz854216-1
-%patch63 -p1 -b .bz880598-1
-%patch64 -p1 -b .bz881729-1
-%patch65 -p1 -b .bz881729-2
-%patch66 -p1 -b .bz906432-1
-%patch67 -p1 -b .bz906432-2
-%patch68 -p1 -b .bz922671-1
-%patch69 -p1 -b .bz922671-2
-%patch70 -p1 -b .bz915769-1
-%patch71 -p1 -b .bz916227-1
-%patch72 -p1 -b .bz922671-3
-%patch73 -p1 -b .bz922671-4
-%patch74 -p1 -b .bz924261-1
-%patch75 -p1 -b .bz924261-2
-%patch76 -p1 -b .bz907894-1
-%patch77 -p1 -b .bz907894-2
-%patch78 -p1 -b .bz907894-3
-%patch79 -p1 -b .bz907894-4
-%patch80 -p1 -b .bz907894-5
-%patch81 -p1 -b .bz915490-1
-%patch82 -p1 -b .bz915490-2
-%patch83 -p1 -b .bz915490-3
-%patch84 -p1 -b .bz947936-1
-%patch85 -p1 -b .bz949491-1
-%patch86 -p1 -b .bz877349-1
-%patch87 -p1 -b .bz877349-2
-%patch88 -p1 -b .bz959189-1
-%patch89 -p1 -b .bz959184-1
-%patch90 -p1 -b .bz959189-2
-%patch91 -p1 -b .bz907894-6
-%patch92 -p1 -b .bz956739-1
-%patch93 -p1 -b .bz1080103-1
-%patch94 -p1 -b .bz1080103-2
-%patch95 -p1 -b .bz1080103-3
 
 %build
 %if %{with runautogen}
@@ -478,15 +285,50 @@ The Corosync Cluster Engine APIs.
 %{_mandir}/man8/sam_overview.8*
 
 %changelog
-* Fri Mar 28 2014 Jan Friesse <jfriesse@redhat.com> 1.4.1-17.1
-- Resolves: rhbz#1080103
+* Mon Jun 02 2014 Jan Friesse <jfriesse@redhat.com> 1.4.7-1
+- Resolves: rhbz#1055584
 
-- cpg: Refactor mh_req_exec_cpg_procleave (rhbz#1080103)
-- merge upstream commit e9d9c4be7293c04ca97bfd84f95b76a22690a92a (rhbz#1080103)
-- cpg: Make sure nodid is always logged as hex num (rhbz#1080103)
-- merge upstream commit 0b825f22f2b95beca1aeb614d22a7e74a84c66b5 (rhbz#1080103)
-- cpg: Make sure left nodes are really removed (rhbz#1080103)
-- merge upstream commit b55f32fe2e1538db33a1ec584b67744c724328c6 (rhbz#1080103)
+- Rebase to Corosync 1.4.7
+
+* Thu May 15 2014 Jan Friesse <jfriesse@redhat.com> 1.4.1-19
+- Related: rhbz#1001210
+
+- totemiba: Fix incorrect failed log message (rhbz#1001210)
+- merge upstream commit 4130d7448dcea024820d20e3c474c54e14ec9cb5 (rhbz#1001210)
+
+* Wed May 14 2014 Jan Friesse <jfriesse@redhat.com> 1.4.1-18
+- Resolves: rhbz#1001210
+- Resolves: rhbz#1011307
+- Resolves: rhbz#1018232
+- Resolves: rhbz#1025321
+- Resolves: rhbz#1067043
+
+- totemiba: Properly allocate RDMA buffers (rhbz#1001210)
+- merge upstream commit 795b04780ff6cd94b2e10aa1826a289f36119ce7 (rhbz#1001210)
+- totemiba: Del channel fd from poll before destroy (rhbz#1001210)
+- merge upstream commit 86fd9a14f6e74b711eb7e89cec72096bdcd1441b (rhbz#1001210)
+- totemiba: Fix parameters position for poll_add (rhbz#1001210)
+- merge upstream commit cba0f90af4af55702c1daa7afa03c8be10eaa5f3 (rhbz#1001210)
+- corosync to start in infiniband + redundant ring active/passive mode (rhbz#1001210)
+- merge upstream commit d0ca2ceb980242dd8c28b57f449eeeac1eb54176 (rhbz#1001210)
+- totemiba: Check if configured MTU is allowed by HW (rhbz#1001210)
+- merge upstream commit 3403fe06e8a915632679c48ccccb2662521746f2 (rhbz#1001210)
+- logsys: Handle full /dev/shm correctly (rhbz#1011307)
+- merge upstream commit 095a114ab84074e16d384f3ccaadfecff80b54a2 (rhbz#1011307)
+- ipcs: Backport socket creds handling from libqb (rhbz#1018232)
+- merge upstream commit 7897e4ae3e1c1ff20a2f375a0a5dc102ab0e98e8 (rhbz#1018232)
+- ipcs: Set SO_PASSCRED also on listening socket (rhbz#1018232)
+- merge upstream commit f11e5bf61941fd6aca018bb2f15f2371c668974f (rhbz#1018232)
+- cpg: Avoid list corruption (rhbz#1025321)
+- merge upstream commit 3c11ea7b84c109e6f8451229437351c5a14c7168 (rhbz#1025321)
+- cpg: Refactor mh_req_exec_cpg_procleave (rhbz#1067043)
+- merge upstream commit e9d9c4be7293c04ca97bfd84f95b76a22690a92a (rhbz#1067043)
+- cpg: Make sure nodid is always logged as hex num (rhbz#1067043)
+- merge upstream commit 0b825f22f2b95beca1aeb614d22a7e74a84c66b5 (rhbz#1067043)
+- cpg: Make sure left nodes are really removed (rhbz#1067043)
+- merge upstream commit b55f32fe2e1538db33a1ec584b67744c724328c6 (rhbz#1067043)
+- totemiba: Add multicast recovery (rhbz#1001210)
+- merge upstream commit 0ea20a3d545c4bf1a02306dd2152eb497a03b7d0 (rhbz#1001210)
 
 * Wed Jul 10 2013 Jan Friesse <jfriesse@redhat.com> 1.4.1-17
 - Resolves: rhbz#956739

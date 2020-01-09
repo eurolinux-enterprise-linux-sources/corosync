@@ -74,6 +74,7 @@
 
 struct ipc_instance {
 	int fd;
+	int user_app_fd;
 	struct control_buffer *control_buffer;
 	char *request_buffer;
 	char *response_buffer;
@@ -84,6 +85,15 @@ struct ipc_instance {
 	size_t dispatch_size;
 	uid_t euid;
 	pthread_mutex_t mutex;
+};
+
+struct ipc_path_data {
+	mar_req_setup_t req_setup;
+	mar_res_setup_t res_setup;
+	char control_map_path[PATH_MAX];
+	char request_map_path[PATH_MAX];
+	char response_map_path[PATH_MAX];
+	char dispatch_map_path[PATH_MAX];
 };
 
 void ipc_hdb_destructor (void *context);
@@ -344,7 +354,7 @@ retry_write:
 	if (addr != addr_orig) {
 		goto error_close_unlink;
 	}
-#ifdef COROSYNC_BSD
+#if (defined COROSYNC_BSD && defined MADV_NOSYNC)
 	madvise(addr_orig, bytes, MADV_NOSYNC);
 #endif
 
@@ -354,7 +364,7 @@ retry_write:
 	if (addr == MAP_FAILED) {
 		goto error_close_unlink;
 	}
-#ifdef COROSYNC_BSD
+#if (defined COROSYNC_BSD && defined MADV_NOSYNC)
 	madvise(((char *)addr_orig) + bytes, bytes, MADV_NOSYNC);
 #endif
 
@@ -395,7 +405,6 @@ static int
 memory_map (char *path, const char *file, void **buf, size_t bytes)
 {
 	int32_t fd;
-	void *addr_orig;
 	void *addr;
 	int32_t res;
 	char *buffer;
@@ -441,28 +450,22 @@ retry_write:
 	}
 	free (buffer);
 
-	addr_orig = mmap (NULL, bytes, PROT_NONE,
-		MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 
-	if (addr_orig == MAP_FAILED) {
+	addr = mmap (NULL, bytes, PROT_READ | PROT_WRITE,
+		MAP_SHARED, fd, 0);
+
+	if (addr == MAP_FAILED) {
 		goto error_close_unlink;
 	}
-
-	addr = mmap (addr_orig, bytes, PROT_READ | PROT_WRITE,
-		MAP_FIXED | MAP_SHARED, fd, 0);
-
-	if (addr != addr_orig) {
-		goto error_close_unlink;
-	}
-#ifdef COROSYNC_BSD
-	madvise(addr_orig, bytes, MADV_NOSYNC);
+#if (defined COROSYNC_BSD && defined MADV_NOSYNC)
+	madvise(addr, bytes, MADV_NOSYNC);
 #endif
 
 	res = close (fd);
 	if (res) {
 		return (-1);
 	}
-	*buf = addr_orig;
+	*buf = addr;
 
 	return 0;
 
@@ -581,12 +584,7 @@ coroipcc_service_connect (
 	union semun semun;
 #endif
 	int sys_res;
-	mar_req_setup_t req_setup;
-	mar_res_setup_t res_setup;
-	char control_map_path[PATH_MAX];
-	char request_map_path[PATH_MAX];
-	char response_map_path[PATH_MAX];
-	char dispatch_map_path[PATH_MAX];
+	struct ipc_path_data *path_data;
 
 	res = hdb_error_to_cs (hdb_handle_create (&ipc_hdb,
 		sizeof (struct ipc_instance), handle));
@@ -599,8 +597,6 @@ coroipcc_service_connect (
 		return (res);
 	}
 
-	res_setup.error = CS_ERR_LIBRARY;
-
 #if defined(COROSYNC_SOLARIS)
 	request_fd = socket (PF_UNIX, SOCK_STREAM, 0);
 #else
@@ -609,9 +605,22 @@ coroipcc_service_connect (
 	if (request_fd == -1) {
 		return (CS_ERR_LIBRARY);
 	}
+	ipc_instance->user_app_fd = dup(request_fd);
+	if (ipc_instance->user_app_fd == -1) {
+		close(request_fd);
+		return (CS_ERR_LIBRARY);
+	}
 #ifdef SO_NOSIGPIPE
 	socket_nosigpipe (request_fd);
 #endif
+
+	path_data = malloc (sizeof(*path_data));
+	if (path_data == NULL) {
+		goto error_connect;
+	}
+	memset(path_data, 0, sizeof(*path_data));
+
+	path_data->res_setup.error = CS_ERR_LIBRARY;
 
 	memset (&address, 0, sizeof (struct sockaddr_un));
 	address.sun_family = AF_UNIX;
@@ -632,7 +641,7 @@ coroipcc_service_connect (
 	}
 
 	sys_res = memory_map (
-		control_map_path,
+		path_data->control_map_path,
 		"control_buffer-XXXXXX",
 		(void *)&ipc_instance->control_buffer,
 		8192);
@@ -642,7 +651,7 @@ coroipcc_service_connect (
 	}
 
 	sys_res = memory_map (
-		request_map_path,
+		path_data->request_map_path,
 		"request_buffer-XXXXXX",
 		(void *)&ipc_instance->request_buffer,
 		request_size);
@@ -652,7 +661,7 @@ coroipcc_service_connect (
 	}
 
 	sys_res = memory_map (
-		response_map_path,
+		path_data->response_map_path,
 		"response_buffer-XXXXXX",
 		(void *)&ipc_instance->response_buffer,
 		response_size);
@@ -662,7 +671,7 @@ coroipcc_service_connect (
 	}
 
 	sys_res = circular_memory_map (
-		dispatch_map_path,
+		path_data->dispatch_map_path,
 		"dispatch_buffer-XXXXXX",
 		(void *)&ipc_instance->dispatch_buffer,
 		dispatch_size);
@@ -717,33 +726,33 @@ coroipcc_service_connect (
 	/*
 	 * Initialize IPC setup message
 	 */
-	req_setup.service = service;
-	strcpy (req_setup.control_file, control_map_path);
-	strcpy (req_setup.request_file, request_map_path);
-	strcpy (req_setup.response_file, response_map_path);
-	strcpy (req_setup.dispatch_file, dispatch_map_path);
-	req_setup.control_size = 8192;
-	req_setup.request_size = request_size;
-	req_setup.response_size = response_size;
-	req_setup.dispatch_size = dispatch_size;
+	path_data->req_setup.service = service;
+	strcpy (path_data->req_setup.control_file, path_data->control_map_path);
+	strcpy (path_data->req_setup.request_file, path_data->request_map_path);
+	strcpy (path_data->req_setup.response_file, path_data->response_map_path);
+	strcpy (path_data->req_setup.dispatch_file, path_data->dispatch_map_path);
+	path_data->req_setup.control_size = 8192;
+	path_data->req_setup.request_size = request_size;
+	path_data->req_setup.response_size = response_size;
+	path_data->req_setup.dispatch_size = dispatch_size;
 
 #if _POSIX_THREAD_PROCESS_SHARED < 1
-	req_setup.semkey = semkey;
+	path_data->req_setup.semkey = semkey;
 #endif
 
-	res = socket_send (request_fd, &req_setup, sizeof (mar_req_setup_t));
+	res = socket_send (request_fd, &path_data->req_setup, sizeof (mar_req_setup_t));
 	if (res != CS_OK) {
 		goto error_exit;
 	}
-	res = socket_recv (request_fd, &res_setup, sizeof (mar_res_setup_t));
+	res = socket_recv (request_fd, &path_data->res_setup, sizeof (mar_res_setup_t));
 	if (res != CS_OK) {
 		goto error_exit;
 	}
 
 	ipc_instance->fd = request_fd;
 
-	if (res_setup.error == CS_ERR_TRY_AGAIN) {
-		res = res_setup.error;
+	if (path_data->res_setup.error != CS_OK) {
+		res = path_data->res_setup.error;
 		goto error_exit;
 	}
 
@@ -756,7 +765,9 @@ coroipcc_service_connect (
 
 	hdb_handle_put (&ipc_hdb, *handle);
 
-	return (res_setup.error);
+	res = path_data->res_setup.error;
+	free(path_data);
+	return (res);
 
 error_exit:
 #if _POSIX_THREAD_PROCESS_SHARED < 1
@@ -764,17 +775,24 @@ error_exit:
 		semctl (ipc_instance->control_buffer->semid, 0, IPC_RMID);
 #endif
 	memory_unmap (ipc_instance->dispatch_buffer, dispatch_size);
+	unlink (path_data->dispatch_map_path);
 error_dispatch_buffer:
 	memory_unmap (ipc_instance->response_buffer, response_size);
+	unlink (path_data->response_map_path);
 error_response_buffer:
 	memory_unmap (ipc_instance->request_buffer, request_size);
+	unlink (path_data->request_map_path);
 error_request_buffer:
 	memory_unmap (ipc_instance->control_buffer, 8192);
+	unlink (path_data->control_map_path);
 error_connect:
+	close (ipc_instance->user_app_fd);
+	ipc_instance->user_app_fd = -1;
 	close (request_fd);
 
 	hdb_handle_destroy (&ipc_hdb, *handle);
 	hdb_handle_put (&ipc_hdb, *handle);
+	free(path_data);
 
 	return (res);
 }
@@ -793,6 +811,7 @@ coroipcc_service_disconnect (
 
 	shutdown (ipc_instance->fd, SHUT_RDWR);
 	close (ipc_instance->fd);
+	close (ipc_instance->user_app_fd);
 	hdb_handle_destroy (&ipc_hdb, handle);
 	hdb_handle_put (&ipc_hdb, handle);
 	return (CS_OK);
@@ -830,7 +849,7 @@ coroipcc_fd_get (
 		return (res);
 	}
 
-	*fd = ipc_instance->fd;
+	*fd = ipc_instance->user_app_fd;
 
 	hdb_handle_put (&ipc_hdb, handle);
 	return (res);
@@ -885,20 +904,15 @@ coroipcc_dispatch_get (
 		error = CS_ERR_TRY_AGAIN;
 		goto error_put;
 	}
-	if (poll_events == 1 && (ufds.revents & (POLLERR|POLLHUP))) {
+	if (poll_events == 1 && (ufds.revents & (POLLERR|POLLHUP|POLLNVAL))) {
 		error = CS_ERR_LIBRARY;
 		goto error_put;
 	}
 
 	error = socket_recv (ipc_instance->fd, &buf, 1);
-#if defined(COROSYNC_SOLARIS) || defined(COROSYNC_BSD) || defined(COROSYNC_DARWIN)
-	/* On many OS poll() never returns POLLHUP or POLLERR.
-	 * EOF is detected when recvmsg() return 0.
-	 */
-	if ( error == CS_ERR_LIBRARY )
+	if (error != CS_OK) {
 		goto error_put;
-#endif
-	assert (error == CS_OK);
+	}
 
 	if (shared_mem_dispatch_bytes_left (ipc_instance) > (ipc_instance->dispatch_size/2)) {
 		/*

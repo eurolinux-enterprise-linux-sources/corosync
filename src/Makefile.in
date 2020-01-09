@@ -184,6 +184,7 @@ CP = @CP@
 CPG_SONAME = @CPG_SONAME@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
+CP_ARGS = @CP_ARGS@
 CYGPATH_W = @CYGPATH_W@
 DARWIN_OPTS = @DARWIN_OPTS@
 DBUS_CFLAGS = @DBUS_CFLAGS@
@@ -884,8 +885,14 @@ uninstall-am: uninstall-corosysconfDATA uninstall-dist_docDATA \
 
 
 coverity:
+	rm -rf cov
+	make clean
 	cov-build --dir=cov make
-	cov-analyze --dir cov
+	cov-analyze --dir cov \
+	    --concurrency \
+	    -co BAD_FREE:allow_first_field:true \
+	    --security \
+	    --wait-for-license
 	cov-format-errors --dir cov
 
 install-exec-local:
