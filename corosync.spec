@@ -17,11 +17,22 @@
 Name: corosync
 Summary: The Corosync Cluster Engine and Application Programming Interfaces
 Version: 1.4.7
-Release: 1%{?numcomm:.%{numcomm}}%{?alphatag:.%{alphatag}}%{?dirty:.%{dirty}}%{?dist}
+Release: 2%{?numcomm:.%{numcomm}}%{?alphatag:.%{alphatag}}%{?dirty:.%{dirty}}%{?dist}
 License: BSD
 Group: System Environment/Base
 URL: http://ftp.corosync.org
 Source0: ftp://ftp:user@ftp.corosync.org/downloads/%{name}-%{version}/%{name}-%{version}%{?numcomm:.%{numcomm}}%{?alphatag:-%{alphatag}}%{?dirty:-%{dirty}}.tar.gz
+
+Patch0: bz1136431-1-Adjust-MTU-for-IPv6-correctly.patch
+Patch1: bz742999-1-config-Make-sure-user-doesn-t-mix-IPv6-and-IPv4.patch
+Patch2: bz742999-2-config-Process-broadcast-option-consistently.patch
+Patch3: bz742999-3-config-Ensure-mcast-address-port-differs-for-rrp.patch
+Patch4: bz1163846-1-totem-Inform-RRP-about-membership-changes.patch
+Patch5: bz1163846-2-totemnet-Add-totemnet_member_set_active.patch
+Patch6: bz1163846-3-totemrrp-Implement-_membership_changed.patch
+Patch7: bz1163846-4-totemudpu-Implement-member_set_active.patch
+Patch8: bz1163846-5-totemudpu-Send-msgs-to-all-members-occasionally.patch
+Patch9: bz1141367-1-ipcc-Fix-ERR_LIBRARY-error-if-finalise-called-inside.patch
 
 ExclusiveArch: i686 x86_64
 
@@ -52,6 +63,16 @@ BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 
 %prep
 %setup -q -n %{name}-%{version}%{?numcomm:.%{numcomm}}%{?alphatag:-%{alphatag}}%{?dirty:-%{dirty}}
+%patch0 -p1 -b .bz1136431-1
+%patch1 -p1 -b .bz742999-1
+%patch2 -p1 -b .bz742999-2
+%patch3 -p1 -b .bz742999-3
+%patch4 -p1 -b .bz1163846-1
+%patch5 -p1 -b .bz1163846-2
+%patch6 -p1 -b .bz1163846-3
+%patch7 -p1 -b .bz1163846-4
+%patch8 -p1 -b .bz1163846-5
+%patch9 -p1 -b .bz1141367-1
 
 %build
 %if %{with runautogen}
@@ -285,6 +306,33 @@ The Corosync Cluster Engine APIs.
 %{_mandir}/man8/sam_overview.8*
 
 %changelog
+* Mon Mar 02 2015 Jan Friesse <jfriesse@redhat.com> 1.4.7-2
+- Resolves: rhbz#1136431
+- Resolves: rhbz#1141367
+- Resolves: rhbz#1163846
+- Resolves: rhbz#742999
+
+- Adjust MTU for IPv6 correctly (rhbz#1136431)
+- merge upstream commit 6fc58377d9f3201a74afedbb53311ff95fde700b (rhbz#1136431)
+- config: Make sure user doesn't mix IPv6 and IPv4 (rhbz#742999)
+- merge upstream commit df4d4da6e204a9f151a764c868bf7c99c97186f5 (rhbz#742999)
+- config: Process broadcast option consistently (rhbz#742999)
+- merge upstream commit 90d458532b59a15ae8e936f43e8bf1f8f3a32ac7 (rhbz#742999)
+- config: Ensure mcast address/port differs for rrp (rhbz#742999)
+- merge upstream commit 6f74374d3ff23735cf5e1d5e01e56d6cd866085c (rhbz#742999)
+- totem: Inform RRP about membership changes (rhbz#1163846)
+- merge upstream commit f35ffb168f8ee3eac4660309088372df4cb215f2 (rhbz#1163846)
+- totemnet: Add totemnet_member_set_active (rhbz#1163846)
+- merge upstream commit 3dafc4c508e4928d459719958918052ce49fd223 (rhbz#1163846)
+- totemrrp: Implement *_membership_changed (rhbz#1163846)
+- merge upstream commit 3dcdfeaddbe054fad63d3a3cb046dd018e118e69 (rhbz#1163846)
+- totemudpu: Implement member_set_active (rhbz#1163846)
+- merge upstream commit bd02ac319af40e4c484c6e4cdb8e049db8813541 (rhbz#1163846)
+- totemudpu: Send msgs to all members occasionally (rhbz#1163846)
+- merge upstream commit 0bd29025419204672e4d7857434019045bf7b456 (rhbz#1163846)
+- ipcc: Fix ERR_LIBRARY error if finalise called inside dispatch (rhbz#1141367)
+- merge upstream commit 83bf77e6f42c2a8b01b1d079e8dc792d9cc7d35d (rhbz#1141367)
+
 * Mon Jun 02 2014 Jan Friesse <jfriesse@redhat.com> 1.4.7-1
 - Resolves: rhbz#1055584
 
