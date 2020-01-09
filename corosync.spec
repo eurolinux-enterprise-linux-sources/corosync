@@ -24,7 +24,7 @@
 Name: corosync
 Summary: The Corosync Cluster Engine and Application Programming Interfaces
 Version: 2.4.3
-Release: 4%{?gitver}%{?dist}
+Release: 2%{?gitver}%{?dist}
 License: BSD
 Group: System Environment/Base
 URL: http://corosync.github.io/corosync/
@@ -32,10 +32,9 @@ Source0: http://build.clusterlabs.org/corosync/releases/%{name}-%{version}%{?git
 
 Patch0: bz1536219-1-logging-Make-blackbox-configurable.patch
 Patch1: bz1536219-2-logging-Close-before-and-open-blackbox-after-fork.patch
-Patch2: bz1560468-1-totemcrypto-Check-length-of-the-packet.patch
 
 %if 0%{?rhel}
-ExclusiveArch: i686 x86_64 s390x ppc64le aarch64
+ExclusiveArch: i686 x86_64 s390x ppc64le
 %endif
 
 # Runtime bits
@@ -92,7 +91,6 @@ BuildRoot: %(mktemp -ud %{_tmppath}/%{name}-%{version}-%{release}-XXXXXX)
 %setup -q -n %{name}-%{version}%{?gittarver}
 %patch0 -p1 -b .bz1536219-1
 %patch1 -p1 -b .bz1536219-2
-%patch2 -p1 -b .bz1560468-1
 
 %build
 %if %{with runautogen}
@@ -524,16 +522,6 @@ fi
 %endif
 
 %changelog
-* Tue Apr 17 2018 Jan Friesse <jfriesse@redhat.com> 2.4.3-4
-- Resolves: rhbz#1422598
-
-- Enable aarch64 build (bz#1422598)
-
-* Fri Apr 06 2018 Jan Friesse <jfriesse@redhat.com> 2.4.3-3
-- Resolves: rhbz#1560468
-
-- totemcrypto: Check length of the packet
-
 * Mon Feb 05 2018 Jan Friesse <jfriesse@redhat.com> 2.4.3-2
 - Resolves: rhbz#1536219
 
