@@ -29,7 +29,7 @@
 Name: corosync
 Summary: The Corosync Cluster Engine and Application Programming Interfaces
 Version: 2.4.3
-Release: 6%{?gitver}%{?dist}.1
+Release: 6%{?gitver}%{?dist}
 License: BSD
 Group: System Environment/Base
 URL: http://corosync.github.io/corosync/
@@ -178,14 +178,13 @@ make %{_smp_mflags}
 
 %if %{with spausedd}
 cd spausedd-%{spausedd_version}
-CFLAGS="${CFLAGS:-%{optflags}}" ; export CFLAGS
 make \
 %if %{defined use_vmguestlib}
     WITH_VMGUESTLIB=1 \
 %else
     WITH_VMGUESTLIB=0 \
 %endif
-    %{?_smp_mflags}
+    %{?_smp_mflags} CFLAGS="%{optflags}"
 %endif
 
 %install
@@ -237,7 +236,7 @@ make DESTDIR="%{buildroot}" PREFIX="%{_prefix}" install
 
 %if %{with systemd}
 mkdir -p %{buildroot}/%{_unitdir}
-install -m 644 -p init/spausedd.service %{buildroot}/%{_unitdir}
+install -m 755 -p init/spausedd.service %{buildroot}/%{_unitdir}
 %else
 mkdir -p %{buildroot}/%{_initrddir}
 install -m 755 -p init/spausedd %{buildroot}/%{_initrddir}
@@ -628,12 +627,6 @@ fi
 %endif
 
 %changelog
-* Fri Aug 16 2019 Jan Friesse <jfriesse@redhat.com> 2.4.3-6.1
-- Resolves: rhbz#1740181
-
-- Do not set exec permission for service file
-- Fix CFLAGS definition
-
 * Thu Mar 21 2019 Jan Friesse <jfriesse@redhat.com> 2.4.3-6
 - Resolves: rhbz#1542703
 
